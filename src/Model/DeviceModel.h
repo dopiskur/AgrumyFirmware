@@ -183,13 +183,20 @@ enum ConditionType
     CONDITION_SCHEDULE = 3,
 };
 
-// Flat, tagged-union style: only the fields matching `type` are meaningful (not a real C++ union).
-struct Rule
+// Roadmap #212. Operator joining a condition to the PREVIOUS one in its Rule's conditions[] - unused (0) at index 0.
+enum LogicalOperator
 {
-    int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump
-    int type = 0;           // ConditionType raw value
+    LOGICAL_AND = 1,
+    LOGICAL_OR = 2,
+};
 
-    // Metric/direction are implicit in targetFunction (Ventilation=humidity/above, Light=light/below, Heating=temperature/below, WaterPump=waterLevel/below).
+// Flat, tagged-union style: only the fields matching `type` are meaningful (not a real C++ union).
+struct Condition
+{
+    int type = 0;           // ConditionType raw value
+    int operatorBefore = 0; // LogicalOperator raw value, 0/unused for this Rule's first condition
+
+    // Metric/direction are implicit in the owning Rule's targetFunction (Ventilation=humidity/above, Light=light/below, Heating=temperature/below, WaterPump=waterLevel/below).
     double threshold = 0;
     double hysteresis = 0;
 
@@ -201,6 +208,19 @@ struct Rule
     int daysOfWeek = 0;
     int start = 0;
     int duration = 0;
+};
+
+// Roadmap #212. Beyond this cap, ConfigParser silently drops extra conditions within one rule (server enforces a matching cap) - independent of MAX_RULES below.
+static const int MAX_CONDITIONS_PER_RULE = 8;
+
+// One automation rule: targetFunction plus a flat, left-to-right AND/OR fold of conditionCount
+// conditions (roadmap #212) - "(A op B) op C", never nested/parenthesized (ActuatorController::evaluateRule).
+// Several Rules for the same targetFunction still OR together on top of this, unchanged since before #212.
+struct Rule
+{
+    int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump
+    Condition conditions[MAX_CONDITIONS_PER_RULE];
+    int conditionCount = 0;
 };
 
 // Beyond this cap, ConfigParser silently drops extra rules (ArduinoJson has no dynamic growth on-device).

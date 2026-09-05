@@ -40,7 +40,11 @@ private:
     // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
     int collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const;
 
-    // localWeekday (0=Sunday..6=Saturday) and localSecondsOfDay (0..86399) are computed ONCE per initController() tick and passed through rather than re-derived per rule. isCurrentlyOn is the target function's CURRENT physical pin state, needed only by Threshold's hysteresis math.
+    // Roadmap #212. Evaluates ONE condition - the per-conditionType dispatch (used to be evaluateRule's whole body, back when a rule was exactly one condition). targetFunction is the owning Rule's, passed separately since Condition itself no longer carries it.
+    bool evaluateCondition(const Condition &condition, int targetFunction, SensorData sensorData, time_t epochSeconds,
+                            int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const;
+
+    // Folds a Rule's conditions[] strictly left-to-right by their operatorBefore - "(A op B) op C", never nested/parenthesized (roadmap #212). localWeekday (0=Sunday..6=Saturday) and localSecondsOfDay (0..86399) are computed ONCE per initController() tick and passed through rather than re-derived per rule. isCurrentlyOn is the target function's CURRENT physical pin state, needed only by Threshold's hysteresis math.
     bool evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
                        int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const;
 

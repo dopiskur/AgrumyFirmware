@@ -128,7 +128,7 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
   {
     JsonObject deviceConfigController = config["deviceConfigController"];
 
-    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap). A rule with an unrecognized conditionType is skipped, not stored half-populated.
+    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap). A rule with zero valid conditions after the inner loop is skipped, not stored empty.
     JsonArray rules = deviceConfigController["rules"];
     currentConfig.configController.ruleCount = 0;
     for (JsonObject r : rules)
@@ -139,25 +139,43 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
         }
         Rule &rule = currentConfig.configController.rules[currentConfig.configController.ruleCount];
         rule.targetFunction = r["relayFunction"];
-        rule.type = r["conditionType"];
-        JsonObject conditionConfig = r["conditionConfig"];
-        switch (rule.type)
+
+        // Roadmap #212: flat AND/OR list, capped at MAX_CONDITIONS_PER_RULE - same silent-truncation/skip-unrecognized-type reasoning as the rules[] loop above, one level deeper.
+        rule.conditionCount = 0;
+        JsonArray conditions = r["conditions"];
+        for (JsonObject c : conditions)
         {
-        case CONDITION_THRESHOLD:
-            rule.threshold = conditionConfig["threshold"];
-            rule.hysteresis = conditionConfig["hysteresis"];
-            break;
-        case CONDITION_INTERVAL:
-            rule.interval = conditionConfig["interval"];
-            rule.intervalLength = conditionConfig["intervalLength"];
-            break;
-        case CONDITION_SCHEDULE:
-            rule.daysOfWeek = conditionConfig["daysOfWeek"];
-            rule.start = conditionConfig["start"];
-            rule.duration = conditionConfig["duration"];
-            break;
-        default:
-            continue; // unrecognized conditionType - skip, do not advance ruleCount
+            if (rule.conditionCount >= MAX_CONDITIONS_PER_RULE)
+            {
+                break;
+            }
+            Condition &condition = rule.conditions[rule.conditionCount];
+            condition.type = c["conditionType"];
+            condition.operatorBefore = c["operator"] | 0;
+            JsonObject conditionConfig = c["conditionConfig"];
+            switch (condition.type)
+            {
+            case CONDITION_THRESHOLD:
+                condition.threshold = conditionConfig["threshold"];
+                condition.hysteresis = conditionConfig["hysteresis"];
+                break;
+            case CONDITION_INTERVAL:
+                condition.interval = conditionConfig["interval"];
+                condition.intervalLength = conditionConfig["intervalLength"];
+                break;
+            case CONDITION_SCHEDULE:
+                condition.daysOfWeek = conditionConfig["daysOfWeek"];
+                condition.start = conditionConfig["start"];
+                condition.duration = conditionConfig["duration"];
+                break;
+            default:
+                continue; // unrecognized conditionType - skip, do not advance conditionCount
+            }
+            rule.conditionCount++;
+        }
+        if (rule.conditionCount == 0)
+        {
+            continue; // nothing valid to evaluate - skip storing this rule, do not advance ruleCount
         }
         currentConfig.configController.ruleCount++;
     }

@@ -28,7 +28,7 @@ int ActuatorController::collectPinsForFunction(RelayFunctionType relayFunction, 
     return count;
 }
 
-// Threshold rules are ignored - they're re-evaluated every poll regardless of timing, no boundary to sleep toward. 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
+// Threshold conditions are ignored - they're re-evaluated every poll regardless of timing, no boundary to sleep toward. 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
 int ActuatorController::computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const
 {
     const int FLOOR_SECONDS = 30;
@@ -38,38 +38,43 @@ int ActuatorController::computeNextWakeSeconds(time_t epochSeconds, int defaultS
     int localWeekday = localTm->tm_wday;
     int localSecondsOfDay = localTm->tm_hour * 3600 + localTm->tm_min * 60 + localTm->tm_sec;
 
+    // Roadmap #212: a boundary can come from ANY condition inside ANY rule, regardless of its position in that rule's AND/OR fold - the fold's boolean RESULT doesn't matter here, only "does this condition's own state flip soon".
     int best = defaultSleepSeconds;
     for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
     {
         const Rule &rule = deviceConfig.configController.rules[i];
-        int candidate = -1;
-        if (rule.type == CONDITION_SCHEDULE)
+        for (int j = 0; j < rule.conditionCount; j++)
         {
-            candidate = secondsUntilScheduleBoundary(rule.daysOfWeek, rule.start, rule.duration, localWeekday, localSecondsOfDay);
-        }
-        else if (rule.type == CONDITION_INTERVAL)
-        {
-            candidate = secondsUntilIntervalBoundary(rule.interval, rule.intervalLength, epochSeconds);
-        }
-        if (candidate >= 0 && candidate < best)
-        {
-            best = candidate;
+            const Condition &condition = rule.conditions[j];
+            int candidate = -1;
+            if (condition.type == CONDITION_SCHEDULE)
+            {
+                candidate = secondsUntilScheduleBoundary(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
+            }
+            else if (condition.type == CONDITION_INTERVAL)
+            {
+                candidate = secondsUntilIntervalBoundary(condition.interval, condition.intervalLength, epochSeconds);
+            }
+            if (candidate >= 0 && candidate < best)
+            {
+                best = candidate;
+            }
         }
     }
     return clampToSleepFloor(best, FLOOR_SECONDS);
 }
 
 // Ventilation reacts to humidity and is the only function whose "on" direction is inverted (exhausting excess humidity, not replenishing a deficit); Light/Heating/WaterPump all turn on BELOW their threshold and off above threshold+hysteresis. isCurrentlyOn is needed only for this dead-zone math - interval/schedule ignore it entirely.
-bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
-                                       int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
+bool ActuatorController::evaluateCondition(const Condition &condition, int targetFunction, SensorData sensorData, time_t epochSeconds,
+                                            int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
 {
-    switch (rule.type)
+    switch (condition.type)
     {
     case CONDITION_THRESHOLD:
     {
         double reading;
         bool turnsOnAboveThreshold;
-        switch ((RelayFunctionType)rule.targetFunction)
+        switch ((RelayFunctionType)targetFunction)
         {
         case RelayFunctionType::Ventilation:
             reading = sensorData.humidity;
@@ -95,15 +100,31 @@ bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, t
         {
             return false;
         }
-        return computeThresholdState(isCurrentlyOn, reading, rule.threshold, rule.hysteresis, turnsOnAboveThreshold);
+        return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
     }
     case CONDITION_INTERVAL:
-        return rule.interval > 0 && computeIntervalState(rule.interval, rule.intervalLength, epochSeconds);
+        return condition.interval > 0 && computeIntervalState(condition.interval, condition.intervalLength, epochSeconds);
     case CONDITION_SCHEDULE:
-        return computeScheduleState(rule.daysOfWeek, rule.start, rule.duration, localWeekday, localSecondsOfDay);
+        return computeScheduleState(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
     default:
         return false; // unrecognized type - ConfigParser already skips these at parse time, belt and suspenders
     }
+}
+
+// Roadmap #212. Evaluates every condition, then hands the results to RelayLogic's foldConditions for
+// the actual strict left-to-right AND/OR combine - array-building split out here so the fold logic
+// itself stays a pure, natively-testable function independent of Arduino/SensorData/this class.
+bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
+                                       int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
+{
+    bool results[MAX_CONDITIONS_PER_RULE];
+    int ops[MAX_CONDITIONS_PER_RULE];
+    for (int i = 0; i < rule.conditionCount; i++)
+    {
+        results[i] = evaluateCondition(rule.conditions[i], rule.targetFunction, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn);
+        ops[i] = rule.conditions[i].operatorBefore;
+    }
+    return foldConditions(results, ops, rule.conditionCount);
 }
 
 // Order matters: cooldown is evaluated against the OLD offSinceEpoch BEFORE anything below touches onSinceEpoch/offSinceEpoch, so an ON request arriving mid-cooldown can never reset its own clock into a permanent lockout.

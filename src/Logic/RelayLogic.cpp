@@ -56,3 +56,17 @@ bool cooldownActive(time_t epochSeconds, time_t offSinceEpoch, int cooldownSecon
 {
     return cooldownSeconds > 0 && offSinceEpoch != 0 && (epochSeconds - offSinceEpoch) < (time_t)cooldownSeconds;
 }
+
+bool foldConditions(const bool results[], const int ops[], int count)
+{
+    if (count <= 0)
+    {
+        return false;
+    }
+    bool result = results[0];
+    for (int i = 1; i < count; i++)
+    {
+        result = (ops[i] == 1) ? (result && results[i]) : (result || results[i]);
+    }
+    return result;
+}

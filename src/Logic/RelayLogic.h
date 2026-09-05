@@ -27,6 +27,13 @@ bool computeAnyScheduleState(const ScheduleWindow slots[], int count, int localW
 // Dead-zone latch: turns on once `reading` crosses the "on" side of `threshold`, stays on until it crosses back past threshold +/- hysteresis, and otherwise holds `currentlyOn` (this function has no state of its own). turnsOnAboveThreshold=true is ventilation's inverted case; every other relay function turns on BELOW its threshold.
 bool computeThresholdState(bool currentlyOn, double reading, double threshold, double hysteresis, bool turnsOnAboveThreshold);
 
+// Roadmap #212. Strict left-to-right fold of already-evaluated condition results, joined by the
+// operator immediately preceding each one (1=AND, 2=OR, matching DeviceModel.h's LogicalOperator -
+// duplicated as plain ints here rather than #included, to keep this header Arduino-independent for
+// native tests) - "((results[0] op ops[1]) op ops[2])...". ops[0] is never read (nothing precedes
+// the first condition). count<=0 returns false (nothing to evaluate).
+bool foldConditions(const bool results[], const int ops[], int count);
+
 // Two independent hard ceilings applied to WaterPump AFTER threshold/interval/schedule already decided its state - the safety net, regardless of which mode produced that decision. Losing the RAM-only timestamps on reboot is deliberate: a reboot physically de-energizes every relay, so there is no ON stretch or cooldown left to remember.
 
 // True once a continuous ON stretch (onSinceEpoch, 0 = not currently tracked) has run for at least maxRunSeconds. maxRunSeconds <= 0 disables the ceiling (never hit) rather than treating 0 as "hit immediately".
