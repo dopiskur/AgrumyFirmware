@@ -11,20 +11,27 @@ in the separate [AgrumyService](https://github.com/dopiskur/AgrumyService) repos
 
 ## Supported hardware
 
-Built with PlatformIO. Two environments:
+Built with PlatformIO. Five environments (plus `native`, host-only, see Tests below):
 
 | Environment | Board | Role |
 | --- | --- | --- |
 | `esp32dev` | ESP32-WROOM-32 dev board | Controller (relays + sensors) |
 | `esp32s3usbotg` | ESP32-S3 | Controller |
+| `kc868-a6` | ESP32-WROOM-32 (KC868-A6 kit) | Controller - six relays behind a PCF8574 I2C expander, not physically verified |
+| `esp32-s3-relay-6ch` | ESP32-S3 (Waveshare ESP32-S3-Relay-6CH kit) | Controller - six relays on direct GPIO, not physically verified |
+| `esp32-lora` | ESP32-WROOM-32 + SX1276 (TTGO LoRa32 V2.1) | Roadmap #220/#225 Profile B - no WiFi/HTTP, a separate setup()/loop() branch entirely, pin mapping and join/uplink cycle not verified against real hardware |
 
 Sensor readings include a `Battery` percentage (roadmap #12) for devices running on
 battery - either a MAX17048 fuel gauge (I2C coulomb counting, recommended for
 precision) or a plain resistor-divider `analogRead` against a piecewise-linear LiPo
 voltage curve (`Logic/BatteryLogic.h`, necessity/fallback path). Relay functions
-(ventilation, heating, water pump, lighting) each support interval duty-cycling,
-threshold+hysteresis control, or a wall-clock schedule with up to
-`MAX_SCHEDULE_SLOTS_PER_FUNCTION` (4) windows a day per function (roadmap #115).
+(ventilation, heating, water pump, lighting) each hold one or more rules, any of
+which turning "on" wins (OR); within one rule, up to `MAX_CONDITIONS_PER_RULE` (8)
+Threshold/Interval/Schedule conditions fold strictly left-to-right by AND/OR
+(roadmap #212 - `RelayLogic::foldConditions`, `ActuatorController::evaluateRule`),
+never nested or precedence-based. Several windows a day for the same function
+are several Schedule-type rules/conditions, OR'd together like any other pair -
+not a fixed per-function slot count.
 
 ## Offline resilience
 
@@ -44,7 +51,8 @@ Schema) and enforced in CI on both repositories.
 
 ## Tests
 
-The relay-decision math (interval/schedule/threshold, roadmap #10/#39/#85) and the
+The relay-decision math (interval/schedule/threshold, roadmap #10/#39/#85), the
+AND/OR condition fold (roadmap #212 - `RelayLogic::foldConditions`), and the
 battery-voltage/percentage conversion (roadmap #12) are pulled out into plain C++
 (`src/Logic/RelayLogic.*`, `src/Logic/BatteryLogic.*` - no `Arduino.h`, no
 `digitalWrite`/`analogRead`) so they can run as Unity tests on the host, without an
@@ -55,8 +63,9 @@ pio test -e native
 ```
 
 `build.yml` runs this on every push/PR as the fast regression brake, ahead of the
-on-device builds. The hardware environments (`esp32dev`, `esp32s3usbotg`) exclude
-these native suites (`test_ignore = test_native_*`) and `native` excludes any future
+on-device builds. Every hardware environment (`esp32dev`, `esp32s3usbotg`,
+`kc868-a6`, `esp32-s3-relay-6ch`, `esp32-lora`) excludes these native suites
+(`test_ignore = test_native_*`) and `native` excludes any future
 `test_embedded_*` suite the other way - no on-device tests exist yet, but the split
 is already in place for when they do.
 
