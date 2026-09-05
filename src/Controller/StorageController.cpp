@@ -195,6 +195,13 @@ bool StorageController::bufferSensorDataToDisk(String payloadJson)
 
 String StorageController::oldestBufferedSensorFile()
 {
+  // /buffer only ever gets created by spillSensorDataToBuffer() on a failed send - open()'ing it
+  // before that ever happened logs a noisy vfs_api error on every device that's never failed a send.
+  if (!LittleFS.exists("/buffer"))
+  {
+    return String();
+  }
+
   File dir = LittleFS.open("/buffer");
   if (!dir || !dir.isDirectory())
   {
