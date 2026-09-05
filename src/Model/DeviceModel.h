@@ -272,6 +272,8 @@ struct DeviceConfig
     bool debug;           // 0 serial print disabled, 1 serial print enabled
     bool reboot;
     bool reset;
+    bool emergencyStop; // tenant-wide fail-closed switch (roadmap #230) - forces every relay off ahead of any rule, independent of configController.relayEnabled
+
     bool firmwareUpdate; // 0 no update, 1 update available
     String firmwareVersion; // newest published version for this device type, "" if none
     String firmwareUrl;     // .bin download URL, paired with firmwareVersion

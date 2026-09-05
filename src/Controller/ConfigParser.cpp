@@ -81,6 +81,7 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
   currentConfig.debug = config["debug"];
   currentConfig.reboot = config["reboot"];
   currentConfig.reset = config["reset"];
+  currentConfig.emergencyStop = config["emergencyStop"] | false;
   currentConfig.firmwareUpdate = config["firmwareUpdate"];
   currentConfig.firmwareVersion = config["firmwareVersion"] | String("");
   currentConfig.firmwareUrl = config["firmwareUrl"] | String("");

@@ -196,8 +196,8 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         }
     }
 
-    // Master safety switch - lets the server force every relay off regardless of what the rules below would otherwise decide.
-    if (!deviceConfig.configController.relayEnabled)
+    // Master safety switches - either one lets the server force every relay off regardless of what the rules below would otherwise decide. emergencyStop is tenant-wide and fail-closed (roadmap #230); relayEnabled is this device's own per-controller toggle.
+    if (deviceConfig.emergencyStop || !deviceConfig.configController.relayEnabled)
     {
         for (int i = 0; i < MAX_RELAY_SLOTS; i++)
         {
