@@ -379,7 +379,7 @@ void DeviceController::registerDevice(String configRegistration)
     reboot();
   }
 
-  Serial.println("[Device] config: " + ConfigParser::maskApiKeyInJson(serviceData.payload));
+  Serial.println("[Device] config: " + ConfigParser::maskApiKeyInJson(ConfigParser::redactSensitiveFieldsInJson(serviceData.payload)));
 
   // A truncated-but-non-empty body would pass both checks above (200/201 status, non-empty) and get persisted - saveFile()'s atomic write only protects DISK integrity, not CONTENT validity, so parse-gate before persisting.
   JsonDocument parseCheck;

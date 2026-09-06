@@ -6,6 +6,7 @@
 #include "NTPClient.h"
 #include "ServiceController.h"
 #include "DeviceController.h"
+#include "ConfigParser.h"
 #include "../Logic/DiscoveryLogic.h"
 
 #include <ArduinoJson.h>
@@ -611,7 +612,8 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     }
 
     if (receivedNewConfig) {
-        Serial.println(serviceData.payload);
+        // Roadmap #370: this was previously logged completely unmasked - apiKey and any password/secret field (e.g. a pendingCommand.payload's WifiPassword) both leaked in full.
+        Serial.println(ConfigParser::maskApiKeyInJson(ConfigParser::redactSensitiveFieldsInJson(serviceData.payload)));
         // Parse-gate BEFORE persisting - a truncated body must neither clobber config.json nor be applied.
         JsonDocument parseCheck;
         if (deserializeJson(parseCheck, serviceData.payload) != DeserializationError::Ok) {

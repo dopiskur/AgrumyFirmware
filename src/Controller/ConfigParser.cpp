@@ -21,9 +21,68 @@ String ConfigParser::maskApiKeyInJson(const String &json)
   return json.substring(0, start) + ServiceController::maskSecret(json.substring(start, end)) + json.substring(end);
 }
 
+static bool containsIgnoreCase(const String &haystack, const char *needle)
+{
+  String h = haystack;
+  h.toLowerCase();
+  return h.indexOf(needle) >= 0;
+}
+
+String ConfigParser::redactSensitiveFieldsInJson(const String &json)
+{
+  String result = json;
+  int pos = 0;
+  while (pos < (int)result.length())
+  {
+    int keyQuoteStart = result.indexOf('"', pos);
+    if (keyQuoteStart < 0)
+    {
+      break;
+    }
+    // An escaped quote (\") means this key sits inside another JSON string's already-escaped text (e.g. a pendingCommand.payload value) - the matching close is also escaped, not a bare ".
+    bool escaped = keyQuoteStart > 0 && result.charAt(keyQuoteStart - 1) == '\\';
+    int keyTextStart = keyQuoteStart + 1;
+    int keyQuoteEnd = result.indexOf(escaped ? "\\\"" : "\"", keyTextStart);
+    if (keyQuoteEnd < 0)
+    {
+      break;
+    }
+    String key = result.substring(keyTextStart, keyQuoteEnd);
+    pos = keyQuoteEnd + (escaped ? 2 : 1);
+
+    if (!containsIgnoreCase(key, "password") && !containsIgnoreCase(key, "secret"))
+    {
+      continue;
+    }
+
+    int colon = result.indexOf(':', pos);
+    if (colon < 0)
+    {
+      break;
+    }
+    int valQuoteStart = result.indexOf('"', colon);
+    if (valQuoteStart < 0)
+    {
+      break;
+    }
+    bool valEscaped = result.charAt(valQuoteStart - 1) == '\\';
+    int valTextStart = valQuoteStart + 1;
+    int valQuoteEnd = result.indexOf(valEscaped ? "\\\"" : "\"", valTextStart);
+    if (valQuoteEnd < 0)
+    {
+      break;
+    }
+
+    const String replacement = "[REDACTED]";
+    result = result.substring(0, valTextStart) + replacement + result.substring(valQuoteEnd);
+    pos = valTextStart + replacement.length() + (valEscaped ? 2 : 1);
+  }
+  return result;
+}
+
 void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 {
-  Serial.println("[Device] Load config: " + maskApiKeyInJson(configJson));
+  Serial.println("[Device] Load config: " + maskApiKeyInJson(redactSensitiveFieldsInJson(configJson)));
 
   JsonDocument config;
   DeserializationError error = deserializeJson(config, configJson);
