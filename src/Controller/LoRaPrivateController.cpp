@@ -19,6 +19,8 @@ namespace
     const int PIN_BUSY = 13;
     const int PIN_DIO1 = 14;
     const int PIN_BATTERY_ADC = 1;
+    // GPIO36 gates the FET powering the SX1262's RF stage - radio.begin() (pure SPI register access) succeeds without it, but transmit/receive radiate nothing until this is driven LOW.
+    const int PIN_VEXT = 36;
 
     // Divider resistors are a guess (1:1) until real hardware confirms the actual values - same caveat as LoRaController.cpp.
     const double BATTERY_DIVIDER_R1_OHMS = 100000.0;
@@ -60,8 +62,6 @@ bool LoRaPrivateController::loadConfig()
     bandwidthKHz = doc["bandwidthKHz"] | 125.0;
     codingRate = doc["codingRate"] | 7;
     txPowerDbm = doc["txPowerDbm"] | 22;
-
-    configLoaded = true;
     return true;
 }
 
@@ -72,9 +72,15 @@ bool LoRaPrivateController::begin()
         return false;
     }
 
+    pinMode(PIN_VEXT, OUTPUT);
+    digitalWrite(PIN_VEXT, LOW);
+    delay(50); // let the RF-stage power rail settle before touching the radio over SPI
+
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CS);
     // syncWord defaults to RADIOLIB_SX126X_SYNC_WORD_PRIVATE - deliberate, this is a private
-    // point-to-point protocol, not LoRaWAN.
+    // point-to-point protocol, not LoRaWAN. Default tcxoVoltage left as-is: RadioLib's modSetup()
+    // already auto-falls-back from TCXO to XTAL on an oscillator-start error, so this board's plain
+    // crystal is handled without forcing tcxoVoltage=0 (which skips that path and fails outright).
     int state = loRaPrivateRadio.begin(frequencyMHz, bandwidthKHz, spreadingFactor, codingRate,
                                         RADIOLIB_SX126X_SYNC_WORD_PRIVATE, txPowerDbm);
     if (state != RADIOLIB_ERR_NONE)
@@ -82,8 +88,7 @@ bool LoRaPrivateController::begin()
         Serial.printf("[LoRaPrivate] Radio init failed, code %d\n", state);
         return false;
     }
-    loRaPrivateRadio.setCRC(2);
-
+    configLoaded = true;
     Serial.printf("[LoRaPrivate] Radio ready: node=%u gateway=%u freq=%.1fMHz SF%u\n",
                   nodeAddress, gatewayAddress, frequencyMHz, spreadingFactor);
     return true;
@@ -119,6 +124,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
         Serial.printf("[LoRaPrivate] Transmit failed, code %d\n", state);
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
+    Serial.printf("[LoRaPrivate] Sent %u bytes to gateway=%u: %s\n", (unsigned)jsonPayload.size(), gatewayAddress, jsonPayload.c_str());
 
     uint8_t downlinkBuf[64];
     state = loRaPrivateRadio.receive(downlinkBuf, sizeof(downlinkBuf), DOWNLINK_LISTEN_TIMEOUT_MS);
@@ -128,12 +134,17 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
         LoRaPrivateFrame downlink;
         if (decodeLoRaPrivateFrame(downlinkBuf, len, downlink) && downlink.destAddress == nodeAddress)
         {
+            Serial.printf("[LoRaPrivate] Downlink received: %s\n", downlink.payload.c_str());
             JsonDocument doc;
             if (!deserializeJson(doc, downlink.payload) && doc["retryAfterSeconds"].is<int>())
             {
                 return (uint32_t)doc["retryAfterSeconds"].as<int>();
             }
         }
+    }
+    else if (state != RADIOLIB_ERR_RX_TIMEOUT)
+    {
+        Serial.printf("[LoRaPrivate] Downlink listen error, code %d\n", state);
     }
 
     return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);

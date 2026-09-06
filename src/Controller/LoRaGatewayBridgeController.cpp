@@ -19,10 +19,11 @@ namespace
     const int PIN_RST = 12;
     const int PIN_BUSY = 13;
     const int PIN_DIO1 = 14;
+    // GPIO36 gates the FET powering the SX1262's RF stage - radio.begin() (pure SPI register access) succeeds without it, but transmit/receive radiate nothing until this is driven LOW.
+    const int PIN_VEXT = 36;
 
-    // Short poll window per loop() iteration - long enough to catch a packet mid-air, short enough
-    // that serial downlinks still get drained promptly. Unverified against real air time.
-    const uint32_t RX_POLL_TIMEOUT_MS = 200;
+    // Needs real margin: a node's uplink arrives with no shared clock, so a short window can start mid-preamble and miss the packet - confirmed on real hardware that anything much below 1s is unreliable at SF9.
+    const uint32_t RX_POLL_TIMEOUT_MS = 1000;
 }
 
 SX1262 loRaBridgeRadio = new Module(PIN_CS, PIN_DIO1, PIN_RST, PIN_BUSY);
@@ -55,7 +56,12 @@ bool LoRaGatewayBridgeController::begin()
     codingRate = doc["codingRate"] | 7;
     txPowerDbm = doc["txPowerDbm"] | 22;
 
+    pinMode(PIN_VEXT, OUTPUT);
+    digitalWrite(PIN_VEXT, LOW);
+    delay(50); // let the RF-stage power rail settle before touching the radio over SPI
+
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_CS);
+    // Default tcxoVoltage left as-is - see LoRaPrivateController.cpp's identical begin() call for why.
     int state = loRaBridgeRadio.begin(frequencyMHz, bandwidthKHz, spreadingFactor, codingRate,
                                        RADIOLIB_SX126X_SYNC_WORD_PRIVATE, txPowerDbm);
     if (state != RADIOLIB_ERR_NONE)
@@ -63,8 +69,6 @@ bool LoRaGatewayBridgeController::begin()
         Serial.printf("[LoRaBridge] Radio init failed, code %d\n", state);
         return false;
     }
-    loRaBridgeRadio.setCRC(2);
-
     configLoaded = true;
     Serial.printf("[LoRaBridge] Ready: gateway=%u freq=%.1fMHz SF%u\n", gatewayAddress, frequencyMHz, spreadingFactor);
     return true;
@@ -84,19 +88,38 @@ void LoRaGatewayBridgeController::pollRadioForUplink()
 {
     uint8_t buf[256];
     int state = loRaBridgeRadio.receive(buf, sizeof(buf), RX_POLL_TIMEOUT_MS);
+    if (state == RADIOLIB_ERR_RX_TIMEOUT)
+    {
+        // Ambient-noise heartbeat, throttled to ~1/2s - confirms the receiver is actually live even when nothing arrives.
+        static unsigned long lastHeartbeatMs = 0;
+        if (millis() - lastHeartbeatMs > 2000)
+        {
+            lastHeartbeatMs = millis();
+            Serial.printf("[LoRaBridge] Listening, ambient RSSI=%.1f dBm\n", loRaBridgeRadio.getRSSI());
+        }
+        return; // nothing in the air this poll window - the common case, stay quiet
+    }
     if (state != RADIOLIB_ERR_NONE)
     {
-        return; // timeout or CRC failure - nothing to forward this iteration
+        Serial.printf("[LoRaBridge] Receive error, code %d\n", state);
+        return;
     }
 
     size_t len = loRaBridgeRadio.getPacketLength();
+    int8_t rssi = (int8_t)loRaBridgeRadio.getRSSI();
     LoRaPrivateFrame frame;
-    if (!decodeLoRaPrivateFrame(buf, len, frame) || frame.destAddress != gatewayAddress)
+    if (!decodeLoRaPrivateFrame(buf, len, frame))
     {
-        return; // not addressed to us, or too short to even hold the address header
+        Serial.printf("[LoRaBridge] Received %u bytes, too short to decode\n", (unsigned)len);
+        return;
+    }
+    if (frame.destAddress != gatewayAddress)
+    {
+        Serial.printf("[LoRaBridge] Received frame for address %u, not ours (%u) - ignored\n", frame.destAddress, gatewayAddress);
+        return;
     }
 
-    int8_t rssi = (int8_t)loRaBridgeRadio.getRSSI();
+    Serial.printf("[LoRaBridge] Uplink from node=%u rssi=%d len=%u: %s\n", frame.srcAddress, rssi, (unsigned)frame.payload.size(), frame.payload.c_str());
     std::string serialFrame = encodeAgrumySerialUplink(frame.srcAddress, rssi, frame.payload);
     Serial.write((const uint8_t *)serialFrame.data(), serialFrame.size());
 }

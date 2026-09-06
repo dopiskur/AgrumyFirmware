@@ -8,9 +8,9 @@
 /// serial (Logic/AgrumySerialFrameLogic). Deliberately dumb: no addressing/mapping decisions happen
 /// here, it only translates between the two wire formats - all routing logic (node address -> Agrumy
 /// device) lives server-side in api.Gateway.LoRaPrivate.LoRaPrivateProtocolUplinkService, same
-/// "gateway is a transparent forwarder" principle as Profile A. Radio init and the bridge's serial
-/// link to a real Agrumy.Gateway process confirmed on real Heltec WiFi LoRa 32 V3 hardware
-/// (2026-09-06) - actual over-the-air uplink/downlink traffic from a real node is still unverified.
+/// "gateway is a transparent forwarder" principle as Profile A. Two-board over-the-air uplink and
+/// the serial link to a real Agrumy.Gateway process confirmed on real Heltec WiFi LoRa 32 V3
+/// hardware (2026-09-06) - downlink (Gateway -> bridge -> node) still unverified.
 class LoRaGatewayBridgeController
 {
 public:
