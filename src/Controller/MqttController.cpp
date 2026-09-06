@@ -3,6 +3,7 @@
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include "mbedtls/md.h"
 
 #include "MqttController.h"
 #include "DeviceController.h"
@@ -26,6 +27,22 @@ namespace
     PubSubClient persistentClient;
     bool persistentClientInitialized = false;
 
+    // 32 raw HMAC-SHA256 bytes -> 64 lowercase hex chars + NUL, same convention as OtaController's sha256ToHex.
+    void hmacSha256Hex(const String &key, const String &message, char out[65])
+    {
+        unsigned char digest[32];
+        mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+                         (const unsigned char *)key.c_str(), key.length(),
+                         (const unsigned char *)message.c_str(), message.length(), digest);
+        static const char *hexDigits = "0123456789abcdef";
+        for (int i = 0; i < 32; i++)
+        {
+            out[i * 2] = hexDigits[(digest[i] >> 4) & 0x0F];
+            out[i * 2 + 1] = hexDigits[digest[i] & 0x0F];
+        }
+        out[64] = '\0';
+    }
+
     // Runs synchronously inside persistentClient.loop() (our own call, not an ISR) - safe to call
     // straight into processPendingCommand(), but note that command's own ack POST/OTA work blocks
     // this call until it returns, same as it already blocks the normal poll-driven path.
@@ -37,11 +54,28 @@ namespace
             Serial.println("[Mqtt] Command message failed to parse - ignored");
             return;
         }
+
+        int idDeviceCommand = doc["idDeviceCommand"] | 0;
+        int actionType = doc["actionType"] | 0;
+        String expiresAt = doc["expiresAt"] | String("");
+        String cmdPayload = doc["payload"] | String("");
+        String receivedSig = doc["sig"] | String("");
+
+        // Roadmap #363: must match MqttCommandPublisher.CanonicalString byte-for-byte - signed with THIS device's own apiKey, not the shared broker credential, so forging a command needs that specific device's key.
+        String canonical = String(idDeviceCommand) + "|" + String(actionType) + "|" + expiresAt + "|" + cmdPayload;
+        char expectedSigHex[65];
+        hmacSha256Hex(deviceConfig.apiKey, canonical, expectedSigHex);
+        if (receivedSig.isEmpty() || !receivedSig.equalsIgnoreCase(expectedSigHex))
+        {
+            Serial.println("[Mqtt] Command message signature missing or invalid - dropped");
+            return;
+        }
+
         deviceConfig.pendingCommand.present = true;
-        deviceConfig.pendingCommand.idDeviceCommand = doc["idDeviceCommand"] | 0;
-        deviceConfig.pendingCommand.actionType = doc["actionType"] | 0;
-        deviceConfig.pendingCommand.expiresAt = doc["expiresAt"] | String("");
-        deviceConfig.pendingCommand.payload = doc["payload"] | String("");
+        deviceConfig.pendingCommand.idDeviceCommand = idDeviceCommand;
+        deviceConfig.pendingCommand.actionType = actionType;
+        deviceConfig.pendingCommand.expiresAt = expiresAt;
+        deviceConfig.pendingCommand.payload = cmdPayload;
         Serial.println("[Mqtt] Command received via persistent channel, dispatching immediately");
         service.processPendingCommand(deviceConfig, serviceRequest, device);
     }
