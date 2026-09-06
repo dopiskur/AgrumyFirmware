@@ -110,6 +110,11 @@ void loop()
 #include "Controller/ActuatorController.h"
 #include "Controller/MqttController.h"
 
+// Roadmap #383 - standalone/dual-role LoRa Gateway relay, only compiled in for boards with a LoRa chip wired (KC868-A6, Heltec V3/V4).
+#ifdef AGRUMY_LORA_GATEWAY_CAPABLE
+#include "Controller/LoRaGatewayRelayController.h"
+#endif
+
 // Injected by tools/firmware_version.py (git tag / FIRMWARE_VERSION env var); the fallback only covers a build that skipped extra_scripts.
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "0.0.0-dev"
@@ -139,6 +144,13 @@ DeviceController device;
 ServiceController service;
 SensorController sensor;
 ActuatorController controller;
+
+#ifdef AGRUMY_LORA_GATEWAY_CAPABLE
+LoRaGatewayRelayController loRaGatewayRelay;
+// Edge-triggered: begin() is attempted once per "enabled" streak, not every loop() cycle - re-attempted from scratch if the admin toggles it off then on again (e.g. after fixing wiring).
+static bool loRaGatewayAttempted = false;
+static bool loRaGatewayReady = false;
+#endif
 
 
 
@@ -269,6 +281,29 @@ void loop()
   service.apiConfig(deviceConfig, serviceRequest, device);
   // >0 only right after a 429 ("Wait") - skip the sensor push too, no point adding another request while the relay/server asked us to back off.
   bool waitingForServer = service.waitSeconds > 0;
+
+#ifdef AGRUMY_LORA_GATEWAY_CAPABLE
+  if (deviceConfig.loRaGatewayEnabled)
+  {
+    if (!loRaGatewayAttempted)
+    {
+      loRaGatewayAttempted = true;
+      loRaGatewayReady = loRaGatewayRelay.begin();
+      if (!loRaGatewayReady)
+      {
+        service.pushEvent(serviceRequest, "LoRaHardwareNotDetected", "radio.begin() failed - LoRa chip not physically present/wired");
+      }
+    }
+    if (loRaGatewayReady)
+    {
+      loRaGatewayRelay.poll(service, serviceRequest, deviceConfig);
+    }
+  }
+  else
+  {
+    loRaGatewayAttempted = false; // toggled off - allow a fresh begin() attempt if re-enabled later
+  }
+#endif
 
   if (deviceConfig.enabled && !waitingForServer) {
     sensor.buildSensorData(deviceConfig);

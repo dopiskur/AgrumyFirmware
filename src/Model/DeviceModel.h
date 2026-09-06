@@ -322,6 +322,8 @@ struct DeviceConfig
 
     int sleepSeconds;
     bool sleepDeep;
+    // Roadmap #383 - only meaningful under AGRUMY_LORA_GATEWAY_CAPABLE; main.cpp's loop() gates LoRaGatewayRelayController::poll() on this.
+    bool loRaGatewayEnabled = false;
 
     // Current UTC offset in seconds (positive east of UTC), refreshed on every config sync; lets scheduleRelayFunction() compute local day/time with plain integer math, no on-device IANA/DST database.
     int utcOffsetSeconds = 0;
