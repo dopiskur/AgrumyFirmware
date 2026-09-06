@@ -35,6 +35,9 @@ public:
     // Connects as a client to the discovered device's Agrumy_<mac> AP, POSTs {Username, PIN, SSID, password} to its WiFiManager /wifisave, then reconnects to this device's own network. Returns true only if the target's /wifisave answered 200.
     bool provisionDiscoveredDevice(const String& payloadJson);
 
+    // Trials the new SSID/password (WiFi.persistent(false), so a power loss mid-trial leaves the old network still the one saved to flash), confirms a real config-poll against serviceRequest succeeds - not just an AP link - then persists; reverts to the previously-connected network on any failure. Returns true only once persisted.
+    bool switchWifiNetwork(const String& payloadJson, ServiceRequest serviceRequest);
+
     JsonDocument buildJson();
 
     // First 4 + last 4 characters visible, rest replaced. Public/static so DeviceController's raw config-JSON debug dump can reuse it.

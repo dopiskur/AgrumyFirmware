@@ -41,6 +41,7 @@ enum CommandActionType
     COMMAND_FORCE_CONFIG_SYNC = 3,
     COMMAND_SCAN_FOR_DEVICES = 4,
     COMMAND_PROVISION_DEVICE = 5,
+    COMMAND_UPDATE_WIFI = 6,
 };
 
 struct PendingCommand
@@ -49,7 +50,7 @@ struct PendingCommand
     int idDeviceCommand = 0;
     int actionType = 0;
     String expiresAt = "";
-    // Only ProvisionDevice sets this - JSON, api.Models.DiscoveryProvisionPayload on the server side.
+    // ProvisionDevice/UpdateWifiCredentials set this - JSON, api.Models.DiscoveryProvisionPayload/WifiUpdatePayload on the server side.
     String payload = "";
 };
 

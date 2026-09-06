@@ -231,6 +231,14 @@ void ServiceController::processPendingCommand(DeviceConfig& config, ServiceReque
         break;
     }
 
+    case COMMAND_UPDATE_WIFI:
+    {
+        Serial.println("[Service] Command " + String(commandId) + " (UpdateWifiCredentials): trying new network");
+        bool switched = switchWifiNetwork(config.pendingCommand.payload, serviceRequest);
+        pushEvent(serviceRequest, "CommandExecuted", switched ? "wifi switch verified and applied" : "wifi switch failed verification, reverted to previous network", commandId);
+        break;
+    }
+
     default:
         Serial.println("[Service] Command " + String(commandId) + ": unknown actionType " + String(actionType) + ", ignoring");
         break;
@@ -339,6 +347,86 @@ bool ServiceController::provisionDiscoveredDevice(const String& payloadJson)
     }
 
     return success;
+}
+
+// A real config-poll, not just WiFi.status()==WL_CONNECTED - a wrong/isolated network can still hand out a link with no route to the server. Mirrors apiConfig()'s own single auth-retry, but never touches its reboot/config-apply side effects.
+static bool verifyServerReachable(ServiceController& serviceController, ServiceRequest serviceRequest)
+{
+    serviceRequest.endpoint = serviceEndpoint.apiConfig;
+    serviceRequest.header.apiId = deviceConfig.apiId;
+    serviceRequest.header.apiKey = "";
+
+    JsonDocument payload;
+    payload["ConfigVersion"] = String(deviceConfig.configVersion);
+    payload["Uptime"] = (uint32_t)(esp_timer_get_time() / 1000000ULL);
+    payload["Rssi"] = WiFi.RSSI();
+    payload["FreeHeap"] = ESP.getFreeHeap();
+    payload["FirmwareVersion"] = firmware;
+    payload["Board"] = AGRUMY_BOARD;
+    payload["Kit"] = AGRUMY_KIT;
+
+    ServiceData serviceData = serviceController.requestPost(payload, serviceRequest);
+    return !serviceData.eventlog.error;
+}
+
+bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequest serviceRequest)
+{
+    JsonDocument payload;
+    if (deserializeJson(payload, payloadJson) != DeserializationError::Ok)
+    {
+        Serial.println("[Service] UpdateWifiCredentials: payload failed to parse");
+        return false;
+    }
+    String newSsid = payload["Ssid"] | String("");
+    String newPassword = payload["WifiPassword"] | String("");
+    if (newSsid.isEmpty())
+    {
+        Serial.println("[Service] UpdateWifiCredentials: payload missing Ssid");
+        return false;
+    }
+
+    // Read back BEFORE disconnecting - WiFi.SSID()/psk() report the currently connected STA credentials on ESP32.
+    String oldSsid = WiFi.SSID();
+    String oldPsk = WiFi.psk();
+
+    const unsigned long connectTimeoutMs = 15000;
+    bool verified = false;
+
+    // persistent(false): WiFi.begin() below writes nothing to flash while the new network is only a trial - the old credentials stay the ones actually saved until this succeeds.
+    WiFi.persistent(false);
+    WiFi.disconnect();
+    Serial.println("[Service] UpdateWifiCredentials: trying " + newSsid);
+    WiFi.begin(newSsid.c_str(), newPassword.c_str());
+
+    if (waitForWifiConnect(connectTimeoutMs))
+    {
+        verified = verifyServerReachable(*this, serviceRequest);
+        if (!verified)
+        {
+            Serial.println("[Service] UpdateWifiCredentials: connected to " + newSsid + " but server was not reachable on it");
+        }
+    }
+    else
+    {
+        Serial.println("[Service] UpdateWifiCredentials: could not connect to " + newSsid);
+    }
+
+    WiFi.persistent(true);
+    if (verified)
+    {
+        // Same call again now that persistence is back on, so the now-proven network is the one actually written to flash.
+        WiFi.begin(newSsid.c_str(), newPassword.c_str());
+        waitForWifiConnect(connectTimeoutMs);
+        return true;
+    }
+
+    WiFi.disconnect();
+    WiFi.begin(oldSsid.c_str(), oldPsk.c_str());
+    if (!waitForWifiConnect(connectTimeoutMs))
+    {
+        Serial.println("[Service] UpdateWifiCredentials: failed to reconnect to " + oldSsid + " after a failed switch");
+    }
+    return false;
 }
 
 void ServiceController::apiAuthenticate(DeviceConfig deviceConfig, ServiceRequest serviceRequest, DeviceController& device)
