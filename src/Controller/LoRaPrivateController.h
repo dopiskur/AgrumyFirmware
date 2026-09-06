@@ -10,8 +10,9 @@
 /// no LoRaWAN join/session) - alternative to Controller/LoRaController's ChirpStack-facing profile,
 /// paired with a Gateway running GatewayProfile.LoRaPrivateProtocol and its radio-frontend board (see
 /// Controller/LoRaGatewayBridgeController). No ADR: the spreading factor is a fixed config value this
-/// node picks itself, not negotiated with a network server. The radio pin mapping (Heltec WiFi LoRa
-/// 32 V3, ESP32-S3+SX1262) and the whole uplink/downlink cycle are UNVERIFIED against real hardware.
+/// node picks itself, not negotiated with a network server. Pin mapping and a single-board cycle
+/// (sense/encode/transmit/listen-timeout/sleep) confirmed on real Heltec WiFi LoRa 32 V3 hardware
+/// (2026-09-06) - the actual two-radio RF exchange with a gateway bridge is still unverified.
 class LoRaPrivateController
 {
 public:

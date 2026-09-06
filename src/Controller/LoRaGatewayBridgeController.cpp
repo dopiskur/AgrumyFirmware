@@ -11,8 +11,7 @@ namespace
     // Leading "/" required - LittleFS.exists()/open() reject a bare filename (confirmed on real ESP32-S3 hardware).
     const char *CONFIG_FILE = "/loraGatewayBridgeConfig.json";
 
-    // Same Heltec WiFi LoRa 32 V3 pin mapping as Controller/LoRaPrivateController.cpp - the bridge
-    // and the sensor nodes are expected to be the same board family. NOT physically verified.
+    // Same Heltec WiFi LoRa 32 V3 pin mapping as Controller/LoRaPrivateController.cpp - confirmed correct on real hardware (radio.begin() succeeds, 2026-09-06).
     const int PIN_SCK = 9;
     const int PIN_MISO = 11;
     const int PIN_MOSI = 10;

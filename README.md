@@ -20,8 +20,8 @@ Built with PlatformIO. Seven environments (plus `native`, host-only, see Tests b
 | `kc868-a6` | ESP32-WROOM-32 (KC868-A6 kit) | Controller - six relays behind a PCF8574 I2C expander, not physically verified |
 | `esp32-s3-relay-6ch` | ESP32-S3 (Waveshare ESP32-S3-Relay-6CH kit) | Controller - six relays on direct GPIO, not physically verified |
 | `esp32-lora` | ESP32-WROOM-32 + SX1276 (TTGO LoRa32 V2.1) | Roadmap #220/#225 Profile B - no WiFi/HTTP, a separate setup()/loop() branch entirely, pin mapping and join/uplink cycle not verified against real hardware |
-| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; not physically verified |
-| `esp32-lora-gateway-bridge` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | The LoRa private-protocol Gateway's own mains-powered radio-frontend board - bridges RadioLib frames to/from Agrumy.Gateway over USB serial; not physically verified |
+| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; pin mapping + single-board cycle confirmed on real hardware, two-radio RF exchange not yet tested |
+| `esp32-lora-gateway-bridge` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | The LoRa private-protocol Gateway's own mains-powered radio-frontend board - bridges RadioLib frames to/from Agrumy.Gateway over USB serial; radio init + real serial link to Agrumy.Gateway confirmed on hardware, real over-the-air traffic not yet tested |
 
 Sensor readings include a `Battery` percentage (roadmap #12) for devices running on
 battery - either a MAX17048 fuel gauge (I2C coulomb counting, recommended for
