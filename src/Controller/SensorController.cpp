@@ -435,8 +435,8 @@ void SensorController::buildSensorDataPayload()
 
     jsonSensorData["deviceID"]=deviceConfig.deviceID;
     jsonSensorData["tenantID"]=deviceConfig.tenantID;
-    jsonSensorData["deviceUnitID"]=deviceConfig.deviceUnitID;
-    jsonSensorData["deviceUnitZoneID"]=deviceConfig.deviceUnitZoneID;
+    jsonSensorData["deviceFarmUnitID"]=deviceConfig.deviceFarmUnitID;
+    jsonSensorData["deviceFarmUnitZoneID"]=deviceConfig.deviceFarmUnitZoneID;
 
 
     // JsonVariant() serializes as JSON null - isnan(...) is this struct's "no reading this cycle" state (see DeviceModel.h SensorData).

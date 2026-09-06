@@ -311,8 +311,8 @@ struct DeviceConfig
 
     int tenantID;
     int deviceID;
-    int deviceUnitID;
-    int deviceUnitZoneID;
+    int deviceFarmUnitID;
+    int deviceFarmUnitZoneID;
     int deviceTypeServiceID;
 
     String apiId;
@@ -362,8 +362,8 @@ struct SensorData
 {
     int tenantID;
     int deviceID;
-    int deviceUnitID;
-    int deviceUnitZoneID;
+    int deviceFarmUnitID;
+    int deviceFarmUnitZoneID;
 
     // NAN means "no reading this cycle" (sensor absent/disabled/failed) - never a real 0, and never the String+atof heap churn a 24/7 device would otherwise accumulate.
     double battery = NAN;

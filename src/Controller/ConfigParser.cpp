@@ -120,8 +120,8 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 
   currentConfig.tenantID = config["tenantID"];
   currentConfig.deviceID = config["deviceID"];
-  currentConfig.deviceUnitID = config["deviceUnitID"];
-  currentConfig.deviceUnitZoneID = config["deviceUnitZoneID"];
+  currentConfig.deviceFarmUnitID = config["deviceFarmUnitID"];
+  currentConfig.deviceFarmUnitZoneID = config["deviceFarmUnitZoneID"];
   currentConfig.deviceTypeServiceID = config["deviceTypeServiceID"]; // 0 http, 1 https, 2 mqtt
 
   currentConfig.apiId = apiId;
