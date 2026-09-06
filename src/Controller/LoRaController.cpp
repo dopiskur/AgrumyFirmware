@@ -7,9 +7,11 @@
 
 namespace
 {
-    const char *CREDENTIALS_FILE = "loraRegistration.json";
-    const char *NONCES_FILE = "loraNonces.bin";
-    const char *SESSION_FILE = "loraSession.bin";
+    // Leading "/" required - LittleFS.exists()/open() reject a bare filename (confirmed on real
+    // ESP32-S3 hardware via Controller/LoRaGatewayBridgeController's identical bug, same fix here).
+    const char *CREDENTIALS_FILE = "/loraRegistration.json";
+    const char *NONCES_FILE = "/loraNonces.bin";
+    const char *SESSION_FILE = "/loraSession.bin";
 
     // TTGO LoRa32 V2.1 (SX1276, EU868) pin mapping - NOT physically verified on this project's
     // hardware, same caveat as the kc868-a6/esp32-s3-relay-6ch envs' pin mappings.
