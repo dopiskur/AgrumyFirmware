@@ -33,13 +33,13 @@ public:
     // True (and clears the pending message into outMessage) exactly once per trip - a safety limit forcing the pump off THIS tick, not still off from a previous trip. Caller polls once per sensor cycle.
     bool consumeSafetyLimitEvent(String &outMessage);
 
-    // Roadmap #365: same one-shot polling contract as consumeSafetyLimitEvent, for an I2C write failure to the PCF8574 relay expander.
+    // Same one-shot polling contract as consumeSafetyLimitEvent, for an I2C write failure to the PCF8574 relay expander.
     bool consumeHardwareFaultEvent(String &outMessage);
 
-    // Roadmap #368: same one-shot polling contract as consumeSafetyLimitEvent, for a NaN threshold reading (sensor absent/disabled/failed) hit during rule evaluation.
+    // Same one-shot polling contract as consumeSafetyLimitEvent, for a NaN threshold reading (sensor absent/disabled/failed) hit during rule evaluation.
     bool consumeSensorStaleEvent(String &outMessage);
 
-    // Minimum of defaultSleepSeconds and every configured Schedule/Interval rule's own next boundary, floor-clamped - so a short window isn't skipped or overrun by a longer default sleep (roadmap #325). Returns defaultSleepSeconds unchanged when no Schedule/Interval rule is configured.
+    // Minimum of defaultSleepSeconds and every configured Schedule/Interval rule's own next boundary, floor-clamped - so a short window isn't skipped or overrun by a longer default sleep. Returns defaultSleepSeconds unchanged when no Schedule/Interval rule is configured.
     int computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const;
 
     // Forces every assigned relay off without reading sensors or evaluating rules - for a cycle where initController() itself is being skipped entirely (disabled device, server backoff wait).

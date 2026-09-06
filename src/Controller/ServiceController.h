@@ -47,7 +47,7 @@ public:
     int waitSeconds = 0;
 
 private:
-    // Roadmap #357: queried on a 401 instead of ever self-wiping from a bare failure count - apiId alone (no apiKey/session) so this reaches a device whose apiKey itself is what's broken.
+    // Queried on a 401 instead of ever self-wiping from a bare failure count - apiId alone (no apiKey/session) so this reaches a device whose apiKey itself is what's broken.
     bool isHardResetPending(ServiceRequest serviceRequest, const String &apiId);
 };
 

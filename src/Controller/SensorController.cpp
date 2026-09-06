@@ -536,13 +536,11 @@ void SensorController::pushSensorData(JsonDocument payload){
     {
         service.pushEvent(serviceRequest, "SafetyLimitTripped", safetyEventMessage);
     }
-    // Roadmap #365.
     String hardwareFaultMessage;
     if (controller.consumeHardwareFaultEvent(hardwareFaultMessage))
     {
         service.pushEvent(serviceRequest, "I2CFault", hardwareFaultMessage);
     }
-    // Roadmap #368.
     String sensorStaleMessage;
     if (controller.consumeSensorStaleEvent(sensorStaleMessage))
     {

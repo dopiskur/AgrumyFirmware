@@ -21,7 +21,7 @@ public:
     // NTP-derived wall-clock seconds, synced at boot and periodically thereafter via maybeResyncTime() - ActuatorController's grid-aligned interval formula needs this instead of millis(), which resets on every reboot (and overflows after ~49.7 days even without one).
     time_t getEpochSeconds();
 
-    // Roadmap #361: call every loop() cycle - resyncs NTP once ~24h has passed since the last successful sync (corrects crystal drift), or retries every ~60s if a sync has never succeeded yet (no internet at boot). Never lets a failed attempt clobber the last known-good time.
+    // Call every loop() cycle - resyncs NTP once ~24h has passed since the last successful sync (corrects crystal drift), or retries every ~60s if a sync has never succeeded yet (no internet at boot). Never lets a failed attempt clobber the last known-good time.
     void maybeResyncTime();
 
     // Mosfet activation
@@ -38,7 +38,7 @@ public:
     bool waitForFileCommitted(String filename, unsigned long timeoutMs = 1000);
     String loadFileRetry(String filename, int maxAttempts = 5, unsigned long retryDelayMs = 100);
 
-    // Roadmap #362: use this instead of loadFileRetry("deviceRegistration.json") directly - falls back to (and repairs from) an NVS backup copy if the primary LittleFS file is unreadable, instead of treating a locally-corrupted primary as "never registered".
+    // Use this instead of loadFileRetry("deviceRegistration.json") directly - falls back to (and repairs from) an NVS backup copy if the primary LittleFS file is unreadable, instead of treating a locally-corrupted primary as "never registered".
     String loadRegistrationWithFallback();
 
     // Backs up config.json to config.json.bak (if it exists and parses) before atomically replacing it, pairing with consumeRollbackTrigger() below; returns whether the new config.json save succeeded.

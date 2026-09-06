@@ -125,7 +125,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int RELAY_I2C_SCL=0;
 #endif
 
-    // Roadmap #366: direct-GPIO kits only (RELAY_I2C_ADDRESS==0) - a PCF8574-expander kit like KC868-A6 already drives its relays active-low by the expander's own wiring convention (see RelayIO.cpp), unrelated to this flag. false on every kit below since none has been field-verified as active-low yet; this only adds the lever, it changes no kit's current behavior.
+    // Direct-GPIO kits only (RELAY_I2C_ADDRESS==0) - a PCF8574-expander kit like KC868-A6 already drives its relays active-low by the expander's own wiring convention (see RelayIO.cpp), unrelated to this flag. false on every kit below since none has been field-verified as active-low yet; this only adds the lever, it changes no kit's current behavior.
     bool RELAY_ACTIVE_LOW=false;
 };
 
@@ -230,10 +230,10 @@ struct Rule
 // Beyond this cap, ConfigParser silently drops extra rules (ArduinoJson has no dynamic growth on-device).
 static const int MAX_RULES = 32;
 
-// Ceiling on physically-wired relay slots a board can report - bump this (and each board's ConfigPin.RELAY_PINS array) for a bigger relay bank, no other schema/wire-format change needed (roadmap #309).
+// Ceiling on physically-wired relay slots a board can report - bump this (and each board's ConfigPin.RELAY_PINS array) for a bigger relay bank, no other schema/wire-format change needed.
 static const int MAX_RELAY_SLOTS = 8;
 
-// Roadmap #369: floor for sleepSeconds, applied at parse time regardless of server-side validation - same value ActuatorController::computeNextWakeSeconds already floors sleep-schedule boundaries to, so both stay in agreement.
+// Floor for sleepSeconds, applied at parse time regardless of server-side validation - same value ActuatorController::computeNextWakeSeconds already floors sleep-schedule boundaries to, so both stay in agreement.
 static const int MIN_SLEEP_SECONDS = 30;
 
 // One physically-wired relay position (Slot, 1-based, indexes ConfigPin.RELAY_PINS[Slot-1]) and which RelayFunctionType it's assigned to - only slots the server actually assigned arrive over the wire, an unlisted slot is unassigned.
@@ -347,7 +347,7 @@ struct DeviceConfig
 
     EventLog eventlog;
 
-    // Roadmap #367: how many rules ConfigParser::parse() rejected wholesale this cycle (unrecognized/over-cap condition) - checked once by whoever applies newConfig, then its job is done.
+    // How many rules ConfigParser::parse() rejected wholesale this cycle (unrecognized/over-cap condition) - checked once by whoever applies newConfig, then its job is done.
     int rulesRejectedCount = 0;
 };
 
@@ -360,7 +360,7 @@ struct SensorData
     int deviceUnitID;
     int deviceUnitZoneID;
 
-    // NAN means "no reading this cycle" (sensor absent/disabled/failed) - never a real 0, and never the String+atof heap churn a 24/7 device would otherwise accumulate (roadmap #326).
+    // NAN means "no reading this cycle" (sensor absent/disabled/failed) - never a real 0, and never the String+atof heap churn a 24/7 device would otherwise accumulate.
     double battery = NAN;
     double temperature = NAN;
     double temperatureSoil = NAN;

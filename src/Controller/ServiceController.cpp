@@ -514,7 +514,7 @@ void ServiceController::apiAuthenticate(DeviceConfig deviceConfig, ServiceReques
     JsonDocument payload;
     serviceData = requestPost(payload, serviceRequest);
 
-    // Roadmap #357: a repeated 401 NEVER wipes the device on its own anymore (a transient server-side outage - cache, DB restore, a bad deploy - used to nuke the whole fleet simultaneously). The only path to a factory reset now is an admin explicitly setting the hard-reset flag from the Web console, checked here via apiId alone since a broken apiKey is exactly the scenario this exists for.
+    // A repeated 401 NEVER wipes the device on its own anymore (a transient server-side outage - cache, DB restore, a bad deploy - used to nuke the whole fleet simultaneously). The only path to a factory reset now is an admin explicitly setting the hard-reset flag from the Web console, checked here via apiId alone since a broken apiKey is exactly the scenario this exists for.
     if(serviceData.eventlog.errorCode==401){
         Serial.println("[Service] Device failed authentication - checking whether an admin requested a hard reset");
         if (isHardResetPending(serviceRequest, deviceConfig.apiId))
@@ -587,7 +587,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         Serial.println(serviceData.eventlog.errorCode);
     }
 
-    // Roadmap #360: a prolonged server/network outage must not, by itself, reboot the device (same "keep running on local rules" philosophy as #357's auth-failure fix) - a raw failed-HTTP-cycle count says nothing about the device's own health. Reboot only on real memory pressure, which a reboot actually fixes.
+    // A prolonged server/network outage must not, by itself, reboot the device (same "keep running on local rules" philosophy as the auth-failure fix above) - a raw failed-HTTP-cycle count says nothing about the device's own health. Reboot only on real memory pressure, which a reboot actually fixes.
     const uint32_t LOW_HEAP_REBOOT_THRESHOLD_BYTES = 20000;
     uint32_t freeHeap = ESP.getFreeHeap();
     if (freeHeap < LOW_HEAP_REBOOT_THRESHOLD_BYTES)
@@ -612,7 +612,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     }
 
     if (receivedNewConfig) {
-        // Roadmap #370: this was previously logged completely unmasked - apiKey and any password/secret field (e.g. a pendingCommand.payload's WifiPassword) both leaked in full.
+        // This was previously logged completely unmasked - apiKey and any password/secret field (e.g. a pendingCommand.payload's WifiPassword) both leaked in full.
         Serial.println(ConfigParser::maskApiKeyInJson(ConfigParser::redactSensitiveFieldsInJson(serviceData.payload)));
         // Parse-gate BEFORE persisting - a truncated body must neither clobber config.json nor be applied.
         JsonDocument parseCheck;
@@ -627,7 +627,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
                 pushEvent(serviceRequest, "ConfigSyncFailed", "code=" + String(newConfig.eventlog.errorCode) + " " + newConfig.eventlog.errorData);
                 receivedNewConfig = false;
             } else {
-                // Roadmap #357: the same admin-set flag isHardResetPending() checks on a 401 also rides along here on an ordinary, successfully-authenticated poll - a healthy device doesn't need the narrow apiId-only path, it just sees this in its next config.
+                // The same admin-set flag isHardResetPending() checks on a 401 also rides along here on an ordinary, successfully-authenticated poll - a healthy device doesn't need the narrow apiId-only path, it just sees this in its next config.
                 if (newConfig.reset) {
                     Serial.println("[Service] Hard reset requested by admin - reseting device to defaults...");
                     device.reset(); // never returns
@@ -680,7 +680,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         deviceConfig = newConfig;
         Serial.println("[Service] Config hot-applied without reboot (version " + String(deviceConfig.configVersion) + ")");
         pushEvent(serviceRequest, "ConfigApplied", "version=" + String(deviceConfig.configVersion));
-        // Roadmap #367: surfaced so an admin actually finds out a rule silently isn't doing what they configured, instead of a quietly-truncated AND/OR chain misbehaving forever.
+        // Surfaced so an admin actually finds out a rule silently isn't doing what they configured, instead of a quietly-truncated AND/OR chain misbehaving forever.
         if (deviceConfig.rulesRejectedCount > 0)
         {
             pushEvent(serviceRequest, "RuleRejected", String(deviceConfig.rulesRejectedCount) + " rule(s) rejected - unrecognized or over-cap condition, not evaluated");

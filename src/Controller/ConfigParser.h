@@ -13,7 +13,7 @@ public:
     // Masks the "apiKey":"..." field value in place - shared by parse()'s config-sync log and DeviceController::registerDevice()'s own log.
     static String maskApiKeyInJson(const String &json);
 
-    // Roadmap #370: fully replaces (never partially, unlike maskApiKeyInJson's "first4****last4" style) the value of every "<key>":"<value>" pair whose key contains "password" or "secret", case-insensitive - handles both a plain top-level field and one nested inside another JSON string's escaped quotes (e.g. a WifiPassword inside a pendingCommand.payload string).
+    // Fully replaces (never partially, unlike maskApiKeyInJson's "first4****last4" style) the value of every "<key>":"<value>" pair whose key contains "password" or "secret", case-insensitive - handles both a plain top-level field and one nested inside another JSON string's escaped quotes (e.g. a WifiPassword inside a pendingCommand.payload string).
     static String redactSensitiveFieldsInJson(const String &json);
 };
 

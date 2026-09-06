@@ -174,7 +174,7 @@ void setup()
   }
 
   device.initializeWifi();
-  // #359: initializeWifi()'s autoConnect() now has a 120s portal timeout instead of blocking forever, so this may fall through still disconnected - loop() retries in the background from here. When it IS connected, WL_CONNECTED can still report before the IP stack/DNS resolver is actually ready for a real HTTP request - this delay covers that gap, not the connection itself.
+  // initializeWifi() may now fall through here still disconnected (autoConnect()'s portal times out instead of blocking forever, loop() retries in the background) - when it IS connected, WL_CONNECTED can still report before the IP stack/DNS resolver is actually ready for a real HTTP request, which this delay covers.
   delay(500);
 
   // 3 config-triggered reboots in a row, each within 60s of its own boot, means the last config update is likely the cause - load the backup instead of repeating the same crash forever.
@@ -248,7 +248,7 @@ void loop()
 {
   Serial.println("[Loop]-----> Start <-----[Loop]");
 
-  // #359: a portal-timeout boot (or a later drop) leaves WiFi disconnected with nothing else retrying it - try again here, throttled so it does not spin every cycle.
+  // A portal-timeout boot (or a later drop) leaves WiFi disconnected with nothing else retrying it - try again here, throttled so it does not spin every cycle.
   static unsigned long lastWifiRetryMs = 0;
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryMs > 60000UL)
   {
@@ -273,7 +273,7 @@ void loop()
   if (deviceConfig.enabled && !waitingForServer) {
     sensor.buildSensorData(deviceConfig);
   } else {
-    // Roadmap #358: buildSensorData()/initController() are being skipped this cycle - force relays off instead of leaving them frozen in whatever state they were last driven to.
+    // buildSensorData()/initController() are being skipped this cycle - force relays off instead of leaving them frozen in whatever state they were last driven to.
     controller.forceAllRelaysOff();
   }
 
@@ -289,9 +289,7 @@ void loop()
   // A full cycle finished without wedging - feed the watchdog. Anything that hangs inside apiConfig()/buildSensorData() never reaches this point, so the reboot backstop stays effective against a real stall.
   esp_task_wdt_reset();
 
-  // Roadmap #325: a relay-driving device dynamically sleeps toward its nearest Schedule/Interval
-  // boundary instead of a fixed sleepSeconds, which can otherwise skip a short window entirely or
-  // run past its end.
+  // A relay-driving device dynamically sleeps toward its nearest Schedule/Interval boundary instead of a fixed sleepSeconds, which can otherwise skip a short window entirely or run past its end.
   uint32_t cycleSeconds;
   if (waitingForServer)
   {

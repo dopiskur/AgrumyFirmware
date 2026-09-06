@@ -8,7 +8,7 @@
 #include "ServiceController.h"
 #include "ActuatorController.h"
 
-// Roadmap #361: 2023-11-14 UTC, safely before any real deployment - distinguishes a genuine epoch from the 0 (or near-0) value NTPClient reports before its first successful sync.
+// 2023-11-14 UTC, safely before any real deployment - distinguishes a genuine epoch from the 0 (or near-0) value NTPClient reports before its first successful sync.
 static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
 
 void ActuatorController::setupController(){
@@ -100,11 +100,11 @@ bool ActuatorController::evaluateCondition(const Condition &condition, int targe
         default:
             return false; // rule somehow targets no function - never on
         }
-        // NAN means no reading this cycle (sensor absent/disabled/failed) - must not be evaluated as a phantom threshold-crossing value (e.g. Heating turning on for a false 0C). Roadmap #324/#326.
+        // NAN means no reading this cycle (sensor absent/disabled/failed) - must not be evaluated as a phantom threshold-crossing value (e.g. Heating turning on for a false 0C).
         if (isnan(reading))
         {
             reportSensorStale("Function " + String(targetFunction) + " threshold condition has no reading this cycle (sensor absent/disabled/failed)");
-            // Roadmap #368: fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed instead of forcing it off.
+            // fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed instead of forcing it off.
             if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
             {
                 return isCurrentlyOn;
@@ -114,7 +114,7 @@ bool ActuatorController::evaluateCondition(const Condition &condition, int targe
         return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
     }
     case CONDITION_INTERVAL:
-        // Roadmap #361: epoch is 0 (or otherwise implausible) before the first successful NTP sync - evaluating against that computes nonsense (Jan 1 1970) rather than skipping until real time is known.
+        // epoch is 0 (or otherwise implausible) before the first successful NTP sync - evaluating against that computes nonsense (Jan 1 1970) rather than skipping until real time is known.
         return epochSeconds >= MIN_PLAUSIBLE_EPOCH && condition.interval > 0 && computeIntervalState(condition.interval, condition.intervalLength, epochSeconds);
     case CONDITION_SCHEDULE:
         return epochSeconds >= MIN_PLAUSIBLE_EPOCH && computeScheduleState(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
@@ -285,14 +285,14 @@ void ActuatorController::driveEveryAssignedRelayOff() const
         relayWrite(pin, false, i2cAddr, i2cSda, i2cScl, activeLow);
     }
 
-    // Roadmap #365: see initController()'s matching check for why this is checked right after every relayWrite pass.
+    // See initController()'s matching check for why this is checked right after every relayWrite pass.
     if (relayI2CFaulted())
     {
         reportHardwareFault("I2C write to relay expander failed while forcing relays off - physical relay state may not match commanded state");
     }
 }
 
-// Roadmap #358: called from main.cpp's loop() whenever a disabled/backoff cycle skips buildSensorData()/initController() entirely, so relays stop freezing in whatever state they were last driven to.
+// Called from main.cpp's loop() whenever a disabled/backoff cycle skips buildSensorData()/initController() entirely, so relays stop freezing in whatever state they were last driven to.
 void ActuatorController::forceAllRelaysOff() const
 {
     driveEveryAssignedRelayOff();
@@ -407,7 +407,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         }
     }
 
-    // Roadmap #365: relayI2CFaulted() reflects the LAST i2cWriteShadow() call, so checking once here (after every relayWrite this tick) catches a bus fault regardless of which function's write hit it.
+    // relayI2CFaulted() reflects the LAST i2cWriteShadow() call, so checking once here (after every relayWrite this tick) catches a bus fault regardless of which function's write hit it.
     if (relayI2CFaulted())
     {
         reportHardwareFault("I2C write to relay expander failed - physical relay state may not match commanded state");

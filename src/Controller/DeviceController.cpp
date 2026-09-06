@@ -196,7 +196,7 @@ String DeviceController::loadFileRetry(String filename, int maxAttempts, unsigne
   return StorageController::loadFileRetry(filename, maxAttempts, retryDelayMs);
 }
 
-// Roadmap #362: primary (LittleFS) first: if that's unreadable, fall back to the NVS backup rather than treating the device as never-registered - the primary file may be only locally corrupted, so a successful fallback also repairs it.
+// Primary (LittleFS) first: if that's unreadable, fall back to the NVS backup rather than treating the device as never-registered - the primary file may be only locally corrupted, so a successful fallback also repairs it.
 String DeviceController::loadRegistrationWithFallback()
 {
   String primary = loadFileRetry("deviceRegistration.json");
@@ -297,7 +297,7 @@ void DeviceController::initializeDevice()
   Serial.println("[Device] Saving registration data " + data);
   saveFile(data, "deviceRegistration.json");
   waitForFileCommitted("deviceRegistration.json");
-  // Roadmap #362: mirrored to NVS (separate flash partition from LittleFS) so a LittleFS-specific corruption still leaves a readable copy of who this device is.
+  // Mirrored to NVS (separate flash partition from LittleFS) so a LittleFS-specific corruption still leaves a readable copy of who this device is.
   StorageController::saveRegistrationBackup(data);
 
   // Blank brokerHost is saved too, so a re-run of this portal (factory reset) always overwrites any prior MQTT settings.
@@ -321,7 +321,7 @@ void DeviceController::registerDevice(String configRegistration)
 
   DeserializationError error = deserializeJson(config, configRegistration);
 
-  // Roadmap #362: this payload may itself have come straight from the primary file (loadRegistrationWithFallback() only substitutes the NVS backup when the primary is EMPTY, not when it opens fine but parses badly) - try the backup here too before treating this as real corruption.
+  // This payload may itself have come straight from the primary file (loadRegistrationWithFallback() only substitutes the NVS backup when the primary is EMPTY, not when it opens fine but parses badly) - try the backup here too before treating this as real corruption.
   if (error)
   {
     Serial.println("[Device] RegisterDevice: primary registration data failed to parse - trying NVS backup");

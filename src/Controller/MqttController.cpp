@@ -61,7 +61,7 @@ namespace
         String cmdPayload = doc["payload"] | String("");
         String receivedSig = doc["sig"] | String("");
 
-        // Roadmap #363: must match MqttCommandPublisher.CanonicalString byte-for-byte - signed with THIS device's own apiKey, not the shared broker credential, so forging a command needs that specific device's key.
+        // Must match MqttCommandPublisher.CanonicalString byte-for-byte - signed with THIS device's own apiKey, not the shared broker credential, so forging a command needs that specific device's key.
         String canonical = String(idDeviceCommand) + "|" + String(actionType) + "|" + expiresAt + "|" + cmdPayload;
         char expectedSigHex[65];
         hmacSha256Hex(deviceConfig.apiKey, canonical, expectedSigHex);

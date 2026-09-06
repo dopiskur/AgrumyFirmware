@@ -129,7 +129,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.servicePoint = servicePoint;
   currentConfig.servicePublicKey = servicePublicKey;
 
-  // Roadmap #369: floored here regardless of server-side validation - a sensor-only device has no controller-side floor to fall back on (ActuatorController::computeNextWakeSeconds only applies to relay-type devices), so 0/negative would otherwise loop with no delay.
+  // Floored here regardless of server-side validation - a sensor-only device has no controller-side floor to fall back on (ActuatorController::computeNextWakeSeconds only applies to relay-type devices), so 0/negative would otherwise loop with no delay.
   int requestedSleepSeconds = config["sleepSeconds"];
   currentConfig.sleepSeconds = requestedSleepSeconds < MIN_SLEEP_SECONDS ? MIN_SLEEP_SECONDS : requestedSleepSeconds;
   currentConfig.sleepDeep = config["sleepDeep"];
@@ -189,7 +189,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   {
     JsonObject deviceConfigController = config["deviceConfigController"];
 
-    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap, and this is a whole-rule cap, not the per-rule condition truncation #367 fixed below).
+    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap, and this is a whole-rule cap, not the per-rule condition rejection handled below).
     JsonArray rules = deviceConfigController["rules"];
     currentConfig.configController.ruleCount = 0;
     currentConfig.rulesRejectedCount = 0;
@@ -200,7 +200,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
             break;
         }
 
-        // Roadmap #367: an unrecognized conditionType, or more conditions than MAX_CONDITIONS_PER_RULE, used to silently drop just that condition/the excess - quietly changing an "A AND B" rule into just "A". Parsed into a local candidate first so a bad condition rejects the WHOLE rule instead of storing a partial one.
+        // An unrecognized conditionType, or more conditions than MAX_CONDITIONS_PER_RULE, used to silently drop just that condition/the excess - quietly changing an "A AND B" rule into just "A". Parsed into a local candidate first so a bad condition rejects the WHOLE rule instead of storing a partial one.
         JsonArray conditions = r["conditions"];
         if ((int)conditions.size() > MAX_CONDITIONS_PER_RULE)
         {

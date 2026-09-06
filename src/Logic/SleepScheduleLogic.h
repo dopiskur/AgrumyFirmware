@@ -1,10 +1,7 @@
 #ifndef SleepScheduleLogic_H
 #define SleepScheduleLogic_H
 
-// Pure, native-testable "sleep until the next relevant boundary" math (roadmap #325) - a fixed
-// sleepSeconds can skip a short Schedule window entirely, or overrun it, if sleepSeconds is longer
-// than the window itself. ActuatorController loops its own rules[] and calls these per-rule, same
-// split as RelayLogic.h (pure math here, array iteration stays in the .cpp).
+// Pure, native-testable "sleep until the next relevant boundary" math - a fixed sleepSeconds can skip a short Schedule window entirely, or overrun it, if sleepSeconds is longer than the window itself. ActuatorController loops its own rules[] and calls these per-rule, same split as RelayLogic.h (pure math here, array iteration stays in the .cpp).
 #include <ctime>
 
 // Seconds until the next ON<->OFF transition of one Schedule window (same semantics as

@@ -5,7 +5,7 @@
 static uint8_t i2cRelayShadow = 0xFF; // all bits high = every relay OFF (active-low expander)
 static bool i2cBegun = false;
 
-// Roadmap #365: last endTransmission() outcome - a nonzero return (bus hung/expander not physically present) used to be silently ignored, so the shadow byte (and relayRead()) kept reporting the COMMANDED state, never anything actually verified on the bus.
+// Last endTransmission() outcome - a nonzero return (bus hung/expander not physically present) used to be silently ignored, so the shadow byte (and relayRead()) kept reporting the COMMANDED state, never anything actually verified on the bus.
 static bool i2cLastWriteFailed = false;
 
 static void i2cWriteShadow(int i2cAddress)
@@ -54,7 +54,7 @@ void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin, bool a
     if (i2cAddress != 0)
     {
         ensureI2CReady(i2cAddress, sdaPin, sclPin);
-        // PCF8574 relay expander is active-LOW: writing 0 turns the relay ON, 1 turns it OFF - opposite of the direct-GPIO HIGH-is-on convention every other kit uses. Fixed by the expander's own wiring, activeLow (roadmap #366) doesn't apply here.
+        // PCF8574 relay expander is active-LOW: writing 0 turns the relay ON, 1 turns it OFF - opposite of the direct-GPIO HIGH-is-on convention every other kit uses. Fixed by the expander's own wiring, activeLow doesn't apply here.
         if (on)
         {
             i2cRelayShadow &= ~(1 << pin);
@@ -66,7 +66,7 @@ void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin, bool a
         i2cWriteShadow(i2cAddress);
         return;
     }
-    // Roadmap #366: activeLow flips which level means "on" for a direct-GPIO relay board wired opposite of this codebase's default HIGH-is-on assumption.
+    // activeLow flips which level means "on" for a direct-GPIO relay board wired opposite of this codebase's default HIGH-is-on assumption.
     bool driveHigh = activeLow ? !on : on;
     digitalWrite(pin, driveHigh ? HIGH : LOW);
 }
