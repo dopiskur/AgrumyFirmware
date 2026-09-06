@@ -36,9 +36,15 @@ public:
     // Minimum of defaultSleepSeconds and every configured Schedule/Interval rule's own next boundary, floor-clamped - so a short window isn't skipped or overrun by a longer default sleep (roadmap #325). Returns defaultSleepSeconds unchanged when no Schedule/Interval rule is configured.
     int computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const;
 
+    // Forces every assigned relay off without reading sensors or evaluating rules - for a cycle where initController() itself is being skipped entirely (disabled device, server backoff wait).
+    void forceAllRelaysOff() const;
+
 private:
     // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
     int collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const;
+
+    // Shared by initController()'s EmergencyStop/relayEnabled branch and forceAllRelaysOff().
+    void driveEveryAssignedRelayOff() const;
 
     // Roadmap #212. Evaluates ONE condition - the per-conditionType dispatch (used to be evaluateRule's whole body, back when a rule was exactly one condition). targetFunction is the owning Rule's, passed separately since Condition itself no longer carries it.
     bool evaluateCondition(const Condition &condition, int targetFunction, SensorData sensorData, time_t epochSeconds,

@@ -263,6 +263,9 @@ void loop()
 
   if (deviceConfig.enabled && !waitingForServer) {
     sensor.buildSensorData(deviceConfig);
+  } else {
+    // Roadmap #358: buildSensorData()/initController() are being skipped this cycle - force relays off instead of leaving them frozen in whatever state they were last driven to.
+    controller.forceAllRelaysOff();
   }
 
   if (deviceConfig.batteryEnabled)

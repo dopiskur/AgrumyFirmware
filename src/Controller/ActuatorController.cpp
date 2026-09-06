@@ -218,6 +218,36 @@ bool ActuatorController::consumeSafetyLimitEvent(String &outMessage)
     return true;
 }
 
+// Forces every currently-assigned relay slot off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
+void ActuatorController::driveEveryAssignedRelayOff() const
+{
+    int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
+    int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
+    int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
+
+    for (int i = 0; i < deviceConfig.configController.relayCount; i++)
+    {
+        const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
+        if (relaySlot.slot < 1 || relaySlot.slot > MAX_RELAY_SLOTS)
+        {
+            continue;
+        }
+        int pin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
+        if (pin < 0)
+        {
+            continue;
+        }
+        relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
+        relayWrite(pin, false, i2cAddr, i2cSda, i2cScl);
+    }
+}
+
+// Roadmap #358: called from main.cpp's loop() whenever a disabled/backoff cycle skips buildSensorData()/initController() entirely, so relays stop freezing in whatever state they were last driven to.
+void ActuatorController::forceAllRelaysOff() const
+{
+    driveEveryAssignedRelayOff();
+}
+
 void ActuatorController::initController(SensorData sensorData, time_t epochSeconds)
 {
     // Routes through RelayIO so an I2C-expander kit (KC868-A6) works the same as a direct-GPIO one.
@@ -251,15 +281,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     // Master safety switches - either one lets the server force every relay off regardless of what the rules below would otherwise decide. emergencyStop is tenant-wide and fail-closed (roadmap #230); relayEnabled is this device's own per-controller toggle.
     if (deviceConfig.emergencyStop || !deviceConfig.configController.relayEnabled)
     {
-        for (int i = 0; i < MAX_RELAY_SLOTS; i++)
-        {
-            if ((RelayFunctionType)configuredType[i] == RelayFunctionType::None || relayPin[i] < 0)
-            {
-                continue;
-            }
-            relayPinMode(relayPin[i], i2cAddr, i2cSda, i2cScl);
-            relayWrite(relayPin[i], false, i2cAddr, i2cSda, i2cScl);
-        }
+        driveEveryAssignedRelayOff();
         return;
     }
 
