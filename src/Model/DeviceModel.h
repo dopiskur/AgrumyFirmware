@@ -230,6 +230,9 @@ static const int MAX_RULES = 32;
 // Ceiling on physically-wired relay slots a board can report - bump this (and each board's ConfigPin.RELAY_PINS array) for a bigger relay bank, no other schema/wire-format change needed (roadmap #309).
 static const int MAX_RELAY_SLOTS = 8;
 
+// Roadmap #369: floor for sleepSeconds, applied at parse time regardless of server-side validation - same value ActuatorController::computeNextWakeSeconds already floors sleep-schedule boundaries to, so both stay in agreement.
+static const int MIN_SLEEP_SECONDS = 30;
+
 // One physically-wired relay position (Slot, 1-based, indexes ConfigPin.RELAY_PINS[Slot-1]) and which RelayFunctionType it's assigned to - only slots the server actually assigned arrive over the wire, an unlisted slot is unassigned.
 struct RelaySlot
 {
@@ -338,7 +341,7 @@ struct DeviceConfig
     ConfigSensor configSensor;
     ConfigController configController;
     ConfigPin configPin;
-    
+
     EventLog eventlog;
 };
 

@@ -70,7 +70,9 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.servicePoint = servicePoint;
   currentConfig.servicePublicKey = servicePublicKey;
 
-  currentConfig.sleepSeconds = config["sleepSeconds"];
+  // Roadmap #369: floored here regardless of server-side validation - a sensor-only device has no controller-side floor to fall back on (ActuatorController::computeNextWakeSeconds only applies to relay-type devices), so 0/negative would otherwise loop with no delay.
+  int requestedSleepSeconds = config["sleepSeconds"];
+  currentConfig.sleepSeconds = requestedSleepSeconds < MIN_SLEEP_SECONDS ? MIN_SLEEP_SECONDS : requestedSleepSeconds;
   currentConfig.sleepDeep = config["sleepDeep"];
   // Keeps the current offset if an older server doesn't send this key - never silently jump to UTC just because the key was missing.
   currentConfig.utcOffsetSeconds = config["utcOffsetSeconds"] | currentConfig.utcOffsetSeconds;
