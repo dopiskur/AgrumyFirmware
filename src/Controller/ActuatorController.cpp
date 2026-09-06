@@ -22,7 +22,11 @@ int ActuatorController::collectPinsForFunction(RelayFunctionType relayFunction, 
         const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
         if (relaySlot.relayFunction == (int)relayFunction && relaySlot.slot >= 1 && relaySlot.slot <= MAX_RELAY_SLOTS)
         {
-            pins[count++] = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
+            int pin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
+            if (pin >= 0) // -1 means this board has no physical pin at this slot - a misconfigured server assignment, not a real relay
+            {
+                pins[count++] = pin;
+            }
         }
     }
     return count;
@@ -249,7 +253,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     {
         for (int i = 0; i < MAX_RELAY_SLOTS; i++)
         {
-            if ((RelayFunctionType)configuredType[i] == RelayFunctionType::None)
+            if ((RelayFunctionType)configuredType[i] == RelayFunctionType::None || relayPin[i] < 0)
             {
                 continue;
             }
@@ -324,7 +328,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     // Safety limits are applied per PHYSICAL SLOT (not once for the function, unlike the loop above) - each relay slot sharing the WaterPump function keeps its own independent on/off-since history. Reuses configuredType/relayPin declared at the top of this function.
     for (int i = 0; i < MAX_RELAY_SLOTS; i++)
     {
-        if ((RelayFunctionType)configuredType[i] == RelayFunctionType::WaterPump)
+        if ((RelayFunctionType)configuredType[i] == RelayFunctionType::WaterPump && relayPin[i] >= 0)
         {
             applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds);
         }

@@ -74,7 +74,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
-    int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, 0, 0}; // slots 7-8 UNDEFINED
+    int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
 #elif defined(AGRUMY_KIT_ESP32S3_RELAY6CH)
     // Not physically verified against real hardware (confirm before first field deploy) - direct GPIO, same digitalWrite/pinMode model as esp32dev/esp32s3usbotg, no I2C expander on this kit.
     int POWER_RAIL_PRIMARY=0; //UNDEFINED
@@ -93,7 +93,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
-    int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, 0, 0}; // slots 7-8 UNDEFINED
+    int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
 #else
     int POWER_RAIL_PRIMARY=2;
     int POWER_RAIL_SECONDARY=15;
@@ -111,7 +111,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=33;
     int BATTERY_ADC=36;
 
-    int RELAY_PINS[8] = {14, 27, 26, 25, 0, 0, 0, 0}; // slots 5-8 UNDEFINED
+    int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
 #endif
 
     // SDA/SCL only meaningful when RELAY_I2C_ADDRESS is nonzero (else direct GPIO, no I2C expander).
