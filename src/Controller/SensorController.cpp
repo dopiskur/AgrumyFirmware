@@ -734,10 +734,7 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
 
     switch (deviceConfig.configSensor.sensorPH)
     {
-    case 0:
-        sensor_liquid_PH();
-        break;
-
+    // No SensorTypeIds constant exists yet for a real pH model - stays unreachable, same convention as every other sensor type here, until one is assigned.
     default:
         break;
     }
@@ -754,20 +751,14 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
 
     switch (deviceConfig.configSensor.sensorRainLevel)
     {
-    case 0:
-        sensor_rainLevel();
-        break;
-
+    // No SensorTypeIds constant exists yet for a real rain-level model - stays unreachable, same convention as every other sensor type here, until one is assigned.
     default:
         break;
     }
 
     switch (deviceConfig.configSensor.sensorWind)
     {
-    case 0:
-        sensor_Wind();
-        break;
-
+    // No SensorTypeIds constant exists yet for a real wind model - stays unreachable, same convention as every other sensor type here, until one is assigned.
     default:
         break;
     }
