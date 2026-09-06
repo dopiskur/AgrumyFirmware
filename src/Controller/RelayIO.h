@@ -7,4 +7,7 @@ void relayPinMode(int pin, int i2cAddress, int sdaPin, int sclPin);
 void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin);
 bool relayRead(int pin, int i2cAddress, int sdaPin, int sclPin);
 
+// True if the last I2C write to the PCF8574 relay expander failed (bus hung/expander not physically present) - roadmap #365, meaningless for a direct-GPIO board (i2cAddress==0) since no I2C write is ever attempted there.
+bool relayI2CFaulted();
+
 #endif

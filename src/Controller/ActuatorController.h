@@ -33,6 +33,9 @@ public:
     // True (and clears the pending message into outMessage) exactly once per trip - a safety limit forcing the pump off THIS tick, not still off from a previous trip. Caller polls once per sensor cycle.
     bool consumeSafetyLimitEvent(String &outMessage);
 
+    // Roadmap #365: same one-shot polling contract as consumeSafetyLimitEvent, for an I2C write failure to the PCF8574 relay expander.
+    bool consumeHardwareFaultEvent(String &outMessage);
+
     // Minimum of defaultSleepSeconds and every configured Schedule/Interval rule's own next boundary, floor-clamped - so a short window isn't skipped or overrun by a longer default sleep (roadmap #325). Returns defaultSleepSeconds unchanged when no Schedule/Interval rule is configured.
     int computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const;
 
@@ -58,6 +61,9 @@ private:
     void applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds);
     void reportSafetyLimitTripped(const String &message);
 
+    // const: called from driveEveryAssignedRelayOff()/forceAllRelaysOff(), both const - pendingHardwareFaultMessage is mutable accordingly.
+    void reportHardwareFault(const String &message) const;
+
     // Roadmap #219. nullptr if no manual command targets this function (or it never arrived - the server only sends what's still active).
     const ManualOverride *findManualOverride(RelayFunctionType relayFunction) const;
 
@@ -69,6 +75,7 @@ private:
     // Last tick's function assignment per physical slot index, so a remap (e.g. WaterPump->Light->WaterPump) can be detected and the stale slot's on/off-since history cleared instead of reused.
     int lastConfiguredType[MAX_RELAY_SLOTS] = {0};
     String pendingSafetyEventMessage = "";
+    mutable String pendingHardwareFaultMessage = "";
 };
 
 // The one ActuatorController instance, defined in main.cpp.

@@ -216,6 +216,23 @@ bool ActuatorController::consumeSafetyLimitEvent(String &outMessage)
     return true;
 }
 
+void ActuatorController::reportHardwareFault(const String &message) const
+{
+    Serial.println("[Hardware fault] " + message);
+    pendingHardwareFaultMessage = message;
+}
+
+bool ActuatorController::consumeHardwareFaultEvent(String &outMessage)
+{
+    if (pendingHardwareFaultMessage.length() == 0)
+    {
+        return false;
+    }
+    outMessage = pendingHardwareFaultMessage;
+    pendingHardwareFaultMessage = "";
+    return true;
+}
+
 // Forces every currently-assigned relay slot off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
 void ActuatorController::driveEveryAssignedRelayOff() const
 {
@@ -237,6 +254,12 @@ void ActuatorController::driveEveryAssignedRelayOff() const
         }
         relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
         relayWrite(pin, false, i2cAddr, i2cSda, i2cScl);
+    }
+
+    // Roadmap #365: see initController()'s matching check for why this is checked right after every relayWrite pass.
+    if (relayI2CFaulted())
+    {
+        reportHardwareFault("I2C write to relay expander failed while forcing relays off - physical relay state may not match commanded state");
     }
 }
 
@@ -352,5 +375,11 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         {
             applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds);
         }
+    }
+
+    // Roadmap #365: relayI2CFaulted() reflects the LAST i2cWriteShadow() call, so checking once here (after every relayWrite this tick) catches a bus fault regardless of which function's write hit it.
+    if (relayI2CFaulted())
+    {
+        reportHardwareFault("I2C write to relay expander failed - physical relay state may not match commanded state");
     }
 }
