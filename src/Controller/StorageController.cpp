@@ -2,8 +2,12 @@
 #include "LittleFS.h"
 #include "FS.h"
 #include <ArduinoJson.h>
+#include <Preferences.h>
 
 #include "StorageController.h"
+
+static const char *REGISTRATION_BACKUP_NAMESPACE = "agrumy";
+static const char *REGISTRATION_BACKUP_KEY = "devReg";
 
 // Return value tells the caller whether data actually reached disk, not just whether it was logged.
 bool StorageController::saveFile(String data, String filename)
@@ -234,4 +238,34 @@ String StorageController::oldestBufferedSensorFile()
 void StorageController::removeBufferedFile(String filename)
 {
   LittleFS.remove("/" + filename);
+}
+
+bool StorageController::saveRegistrationBackup(String data)
+{
+  Preferences prefs;
+  if (!prefs.begin(REGISTRATION_BACKUP_NAMESPACE, false))
+  {
+    Serial.println("[Device] saveRegistrationBackup: NVS open (read-write) failed");
+    return false;
+  }
+  size_t written = prefs.putString(REGISTRATION_BACKUP_KEY, data);
+  prefs.end();
+  if (written != data.length())
+  {
+    Serial.println("[Device] saveRegistrationBackup: incomplete NVS write");
+    return false;
+  }
+  return true;
+}
+
+String StorageController::loadRegistrationBackup()
+{
+  Preferences prefs;
+  if (!prefs.begin(REGISTRATION_BACKUP_NAMESPACE, true))
+  {
+    return String(); // namespace never created yet - no backup exists
+  }
+  String data = prefs.getString(REGISTRATION_BACKUP_KEY, "");
+  prefs.end();
+  return data;
 }

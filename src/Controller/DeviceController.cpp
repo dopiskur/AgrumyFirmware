@@ -196,6 +196,28 @@ String DeviceController::loadFileRetry(String filename, int maxAttempts, unsigne
   return StorageController::loadFileRetry(filename, maxAttempts, retryDelayMs);
 }
 
+// Roadmap #362: primary (LittleFS) first: if that's unreadable, fall back to the NVS backup rather than treating the device as never-registered - the primary file may be only locally corrupted, so a successful fallback also repairs it.
+String DeviceController::loadRegistrationWithFallback()
+{
+  String primary = loadFileRetry("deviceRegistration.json");
+  if (!primary.isEmpty())
+  {
+    return primary;
+  }
+
+  Serial.println("[Device] deviceRegistration.json unreadable - trying NVS backup");
+  String backup = StorageController::loadRegistrationBackup();
+  if (backup.isEmpty())
+  {
+    Serial.println("[Device] No NVS backup either - device genuinely unregistered or both copies lost");
+    return String();
+  }
+
+  Serial.println("[Device] NVS backup found - repairing deviceRegistration.json from it");
+  saveFile(backup, "deviceRegistration.json");
+  return backup;
+}
+
 void DeviceController::initializeWifi()
 {
 
@@ -275,6 +297,8 @@ void DeviceController::initializeDevice()
   Serial.println("[Device] Saving registration data " + data);
   saveFile(data, "deviceRegistration.json");
   waitForFileCommitted("deviceRegistration.json");
+  // Roadmap #362: mirrored to NVS (separate flash partition from LittleFS) so a LittleFS-specific corruption still leaves a readable copy of who this device is.
+  StorageController::saveRegistrationBackup(data);
 
   // Blank brokerHost is saved too, so a re-run of this portal (factory reset) always overwrites any prior MQTT settings.
   JsonDocument mqttConfigJson;
@@ -297,10 +321,23 @@ void DeviceController::registerDevice(String configRegistration)
 
   DeserializationError error = deserializeJson(config, configRegistration);
 
-  // Unparseable registration data means the file itself is corrupt, not just one bad write - retrying would reread the same bytes, so format()+restart (see StorageController::saveFile) is the deliberate recovery.
+  // Roadmap #362: this payload may itself have come straight from the primary file (loadRegistrationWithFallback() only substitutes the NVS backup when the primary is EMPTY, not when it opens fine but parses badly) - try the backup here too before treating this as real corruption.
   if (error)
   {
-    Serial.print("[Device] RegisterDevice; deserializeJson() failed, reseting to defaults ");
+    Serial.println("[Device] RegisterDevice: primary registration data failed to parse - trying NVS backup");
+    String backup = StorageController::loadRegistrationBackup();
+    error = backup.isEmpty() ? error : deserializeJson(config, backup);
+    if (!error)
+    {
+      Serial.println("[Device] NVS backup parsed - repairing deviceRegistration.json from it");
+      saveFile(backup, "deviceRegistration.json");
+    }
+  }
+
+  // Both copies are gone or unparseable - real corruption, not a transient glitch. format()+restart is the last resort here, not the first reflex.
+  if (error)
+  {
+    Serial.print("[Device] RegisterDevice; deserializeJson() failed on both copies, reseting to defaults ");
     reset();
   }
 

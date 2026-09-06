@@ -23,6 +23,11 @@ public:
     static String oldestBufferedSensorFile();
 
     static void removeBufferedFile(String filename);
+
+    // Roadmap #362: NVS (Preferences), a genuinely separate flash partition from LittleFS - a LittleFS-specific corruption never takes out both copies of the one file the device needs to know who it is.
+    static bool saveRegistrationBackup(String data);
+    // "" means no backup was ever written, or the read itself failed - same "empty means absent" convention as loadFile().
+    static String loadRegistrationBackup();
 };
 
 #endif

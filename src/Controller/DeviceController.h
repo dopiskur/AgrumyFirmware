@@ -38,6 +38,9 @@ public:
     bool waitForFileCommitted(String filename, unsigned long timeoutMs = 1000);
     String loadFileRetry(String filename, int maxAttempts = 5, unsigned long retryDelayMs = 100);
 
+    // Roadmap #362: use this instead of loadFileRetry("deviceRegistration.json") directly - falls back to (and repairs from) an NVS backup copy if the primary LittleFS file is unreadable, instead of treating a locally-corrupted primary as "never registered".
+    String loadRegistrationWithFallback();
+
     // Backs up config.json to config.json.bak (if it exists and parses) before atomically replacing it, pairing with consumeRollbackTrigger() below; returns whether the new config.json save succeeded.
     bool saveConfigFile(String newConfigJson);
 

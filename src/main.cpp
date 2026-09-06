@@ -96,7 +96,6 @@ void loop()
 
 #include <NTPClient.h>
 #include <Esp.h>
-#include "EEPROM.h"
 #include "LittleFS.h"
 #include <Wire.h>
 #include <ArduinoJson.h>
@@ -116,7 +115,6 @@ void loop()
 #define FIRMWARE_VERSION "0.0.0-dev"
 #endif
 const char *firmware = FIRMWARE_VERSION;
-const String CONFIG_BASE = "deviceRegistration.json";
 const String CONFIG_DEFAULTS = "config.json";
 
 // Default 8192-byte loopTask stack overflows under chained TLS handshakes (apiConfig's 401 retry into apiAuthenticate); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE build-flag fix, so SET_LOOP_TASK_STACK_SIZE is used instead. 24576 was enough for that path, but setup()'s own loadConfig/ConfigParser::parse call chain (JsonDocument, DeviceConfig struct copies, nested String concatenations) overflowed even 32768, confirmed via vApplicationStackOverflowHook - 49152 covers it with margin.
@@ -165,11 +163,10 @@ void setup()
     Serial.println("[Main] LittleFS mount/format FAILED");
   }
   Serial.printf("[FS] LittleFS total=%u used=%u bytes\n", LittleFS.totalBytes(), LittleFS.usedBytes());
-  EEPROM.begin(512);
   // LittleFS.begin(true) above can trigger a format on the format-on-fail branch - the flash subsystem needs time to fully settle before the next access is reliable (empirically confirmed: file reads intermittently fail without this).
   delay(500);
 
-  String configRegistration = device.loadFileRetry(CONFIG_BASE);
+  String configRegistration = device.loadRegistrationWithFallback();
   if (configRegistration.isEmpty())
   {
     Serial.println("[Main] Registration file not found, starting initialization...");
