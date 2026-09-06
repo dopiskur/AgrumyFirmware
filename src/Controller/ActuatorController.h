@@ -52,6 +52,12 @@ private:
     void applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds);
     void reportSafetyLimitTripped(const String &message);
 
+    // Roadmap #219. nullptr if no manual command targets this function (or it never arrived - the server only sends what's still active).
+    const ManualOverride *findManualOverride(RelayFunctionType relayFunction) const;
+
+    // NAN for an unrecognized metric - same "no reading this cycle" convention evaluateCondition already uses, so the caller's existing isnan() guard covers it too.
+    double readingForTargetMetric(int targetMetric, const SensorData &sensorData) const;
+
     time_t waterPumpOnSinceEpoch[MAX_RELAY_SLOTS] = {0};
     time_t waterPumpOffSinceEpoch[MAX_RELAY_SLOTS] = {0};
     // Last tick's function assignment per physical slot index, so a remap (e.g. WaterPump->Light->WaterPump) can be detected and the stale slot's on/off-since history cleared instead of reused.

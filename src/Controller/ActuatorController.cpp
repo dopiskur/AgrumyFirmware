@@ -170,6 +170,33 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
     }
 }
 
+const ManualOverride *ActuatorController::findManualOverride(RelayFunctionType relayFunction) const
+{
+    for (int i = 0; i < deviceConfig.configController.manualOverrideCount; i++)
+    {
+        if (deviceConfig.configController.manualOverrides[i].relayFunction == (int)relayFunction)
+        {
+            return &deviceConfig.configController.manualOverrides[i];
+        }
+    }
+    return nullptr;
+}
+
+double ActuatorController::readingForTargetMetric(int targetMetric, const SensorData &sensorData) const
+{
+    switch (targetMetric)
+    {
+    case TARGET_METRIC_TEMPERATURE:
+        return sensorData.temperature;
+    case TARGET_METRIC_HUMIDITY:
+        return sensorData.humidity;
+    case TARGET_METRIC_MOISTURE:
+        return sensorData.moisture;
+    default:
+        return NAN;
+    }
+}
+
 void ActuatorController::reportSafetyLimitTripped(const String &message)
 {
     Serial.println("[Safety limit] " + message);
@@ -271,6 +298,20 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         if (function == RelayFunctionType::WaterPump && deviceConfig.configController.skipWaterPumpForRain)
         {
             shouldBeOn = false;
+        }
+
+        // Roadmap #219: a manual command WINS over both the automated rules' OR result above and the rain veto - an admin explicitly asking for this function to run right now is a deliberate bypass of automation, not another vote in it.
+        if (const ManualOverride *manualOverride = findManualOverride(function))
+        {
+            double reading = readingForTargetMetric(manualOverride->targetMetric, sensorData);
+            bool turnsOnAboveThreshold = (function == RelayFunctionType::Ventilation);
+            if (manualOverride->mode != MANUAL_OVERRIDE_TARGET || !isnan(reading))
+            {
+                shouldBeOn = evaluateManualOverride(manualOverride->mode, epochSeconds, manualOverride->expiresAtEpoch,
+                                                     isCurrentlyOn, reading, manualOverride->targetThreshold, manualOverride->targetHysteresis,
+                                                     turnsOnAboveThreshold);
+            }
+            // else: Target mode but the metric is missing this cycle (sensor absent/disabled) - fall through, keep whatever the automated rules above already decided, same NAN-safety convention as evaluateCondition.
         }
 
         for (int i = 0; i < pinCount; i++)

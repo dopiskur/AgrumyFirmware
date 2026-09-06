@@ -42,4 +42,7 @@ bool runTimeCeilingHit(time_t epochSeconds, time_t onSinceEpoch, int maxRunSecon
 // True while less than cooldownSeconds have passed since the pump's last real OFF transition (offSinceEpoch, 0 = never been off since boot). cooldownSeconds <= 0 disables the cooldown (never active).
 bool cooldownActive(time_t epochSeconds, time_t offSinceEpoch, int cooldownSeconds);
 
+// Roadmap #219: whether a manual override should force its target relay function ON this tick. Past expiresAtEpoch (the hard per-command safety cap, computed server-side from the zone's own MaxRunSeconds) always returns false regardless of mode - the caller falls back to its normal automated-rule result for that tick. mode==1 (Duration) is unconditional while inside the window; mode==2 (Target) defers to the SAME dead-zone math as an automated Threshold condition (computeThresholdState) - reading/threshold/hysteresis/turnsOnAboveThreshold are ignored for Duration mode.
+bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch, bool isCurrentlyOn, double reading, double threshold, double hysteresis, bool turnsOnAboveThreshold);
+
 #endif

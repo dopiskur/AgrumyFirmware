@@ -186,6 +186,25 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     // Falls back to the current value so an older server build can't accidentally re-arm a pump the last sync deliberately vetoed.
     currentConfig.configController.skipWaterPumpForRain = deviceConfigController["skipWaterPumpForRain"] | currentConfig.configController.skipWaterPumpForRain;
 
+    // Roadmap #219 - capped at MAX_MANUAL_OVERRIDES, same "ArduinoJson has no dynamic growth on-device" reasoning as rules/relays above.
+    JsonArray manualOverrides = deviceConfigController["manualOverrides"];
+    currentConfig.configController.manualOverrideCount = 0;
+    for (JsonObject mo : manualOverrides)
+    {
+        if (currentConfig.configController.manualOverrideCount >= MAX_MANUAL_OVERRIDES)
+        {
+            break;
+        }
+        ManualOverride &override = currentConfig.configController.manualOverrides[currentConfig.configController.manualOverrideCount];
+        override.relayFunction = mo["relayFunction"];
+        override.mode = mo["mode"];
+        override.expiresAtEpoch = (time_t)(long)mo["expiresAtEpoch"];
+        override.targetMetric = mo["targetMetric"] | 0;
+        override.targetThreshold = mo["targetThreshold"] | 0.0;
+        override.targetHysteresis = mo["targetHysteresis"] | 0.0;
+        currentConfig.configController.manualOverrideCount++;
+    }
+
     currentConfig.configController.relayEnabled = deviceConfigController["relayEnabled"];
 
     // Capped at MAX_RELAY_SLOTS - same "ArduinoJson has no dynamic growth on-device" reasoning as rules above; only slots the server actually assigned ride along, an unlisted slot is unassigned.

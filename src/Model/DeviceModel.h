@@ -236,6 +236,36 @@ struct RelaySlot
     int relayFunction = 0;
 };
 
+// Roadmap #219.
+enum ManualOverrideMode
+{
+    MANUAL_OVERRIDE_DURATION = 1,
+    MANUAL_OVERRIDE_TARGET = 2,
+};
+
+// Mirrors api.Models.SensorMetric's numeric values exactly (only the three Target mode allows) - a raw wire int, not the full server-side enum.
+enum ManualOverrideTargetMetric
+{
+    TARGET_METRIC_TEMPERATURE = 1,
+    TARGET_METRIC_HUMIDITY = 3,
+    TARGET_METRIC_MOISTURE = 5,
+};
+
+// One admin-triggered manual actuation - the server is authoritative for start/stop/expiry, this is a snapshot delivered fresh on every config poll (present only while the server still considers it active). expiresAtEpoch is the hard safety cap regardless of mode, computed server-side from the zone's own MaxRunSeconds for this function - see RelayLogic::evaluateManualOverride.
+struct ManualOverride
+{
+    int relayFunction = 0; // RelayFunctionType raw value
+    int mode = 0;           // ManualOverrideMode raw value
+    time_t expiresAtEpoch = 0;
+    // Target mode only - metric selection mirrors api.Models.SensorMetric's Temperature/Humidity/Moisture (roadmap #219's allowed subset for Target mode).
+    int targetMetric = 0;
+    double targetThreshold = 0;
+    double targetHysteresis = 0;
+};
+
+// At most one per manually-triggerable function (Ventilation/Heating/WaterPump today) - headroom for one more without a wire-format change.
+static const int MAX_MANUAL_OVERRIDES = 4;
+
 struct ConfigController
 {
     // Empty (ruleCount 0) when the device has no assigned zone, meaning every relay function stays off.
@@ -248,6 +278,10 @@ struct ConfigController
 
     // Server-computed rain veto for WaterPump; the device just applies this flag.
     bool skipWaterPumpForRain = false;
+
+    // Roadmap #219 - present only while the server still considers the command active, see ManualOverride's own remarks.
+    ManualOverride manualOverrides[MAX_MANUAL_OVERRIDES];
+    int manualOverrideCount = 0;
 
     int relayEnabled;
     RelaySlot relays[MAX_RELAY_SLOTS];
