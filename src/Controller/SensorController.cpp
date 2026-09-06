@@ -542,6 +542,12 @@ void SensorController::pushSensorData(JsonDocument payload){
     {
         service.pushEvent(serviceRequest, "I2CFault", hardwareFaultMessage);
     }
+    // Roadmap #368.
+    String sensorStaleMessage;
+    if (controller.consumeSensorStaleEvent(sensorStaleMessage))
+    {
+        service.pushEvent(serviceRequest, "SensorStale", sensorStaleMessage);
+    }
 
     // Disk backlog goes first, oldest file first, so the server receives rows in chronological order; a flush that broke off means the connection is down again, so skip the doomed live attempt.
     bool sent = false;

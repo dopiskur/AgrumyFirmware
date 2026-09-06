@@ -36,6 +36,9 @@ public:
     // Roadmap #365: same one-shot polling contract as consumeSafetyLimitEvent, for an I2C write failure to the PCF8574 relay expander.
     bool consumeHardwareFaultEvent(String &outMessage);
 
+    // Roadmap #368: same one-shot polling contract as consumeSafetyLimitEvent, for a NaN threshold reading (sensor absent/disabled/failed) hit during rule evaluation.
+    bool consumeSensorStaleEvent(String &outMessage);
+
     // Minimum of defaultSleepSeconds and every configured Schedule/Interval rule's own next boundary, floor-clamped - so a short window isn't skipped or overrun by a longer default sleep (roadmap #325). Returns defaultSleepSeconds unchanged when no Schedule/Interval rule is configured.
     int computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const;
 
@@ -64,6 +67,9 @@ private:
     // const: called from driveEveryAssignedRelayOff()/forceAllRelaysOff(), both const - pendingHardwareFaultMessage is mutable accordingly.
     void reportHardwareFault(const String &message) const;
 
+    // const: called from evaluateCondition(), which is const - pendingSensorStaleMessage is mutable accordingly.
+    void reportSensorStale(const String &message) const;
+
     // Roadmap #219. nullptr if no manual command targets this function (or it never arrived - the server only sends what's still active).
     const ManualOverride *findManualOverride(RelayFunctionType relayFunction) const;
 
@@ -76,6 +82,7 @@ private:
     int lastConfiguredType[MAX_RELAY_SLOTS] = {0};
     String pendingSafetyEventMessage = "";
     mutable String pendingHardwareFaultMessage = "";
+    mutable String pendingSensorStaleMessage = "";
 };
 
 // The one ActuatorController instance, defined in main.cpp.

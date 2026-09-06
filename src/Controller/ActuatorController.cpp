@@ -100,6 +100,12 @@ bool ActuatorController::evaluateCondition(const Condition &condition, int targe
         // NAN means no reading this cycle (sensor absent/disabled/failed) - must not be evaluated as a phantom threshold-crossing value (e.g. Heating turning on for a false 0C). Roadmap #324/#326.
         if (isnan(reading))
         {
+            reportSensorStale("Function " + String(targetFunction) + " threshold condition has no reading this cycle (sensor absent/disabled/failed)");
+            // Roadmap #368: fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed instead of forcing it off.
+            if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
+            {
+                return isCurrentlyOn;
+            }
             return false;
         }
         return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
@@ -231,6 +237,23 @@ bool ActuatorController::consumeHardwareFaultEvent(String &outMessage)
     }
     outMessage = pendingHardwareFaultMessage;
     pendingHardwareFaultMessage = "";
+    return true;
+}
+
+void ActuatorController::reportSensorStale(const String &message) const
+{
+    Serial.println("[Sensor stale] " + message);
+    pendingSensorStaleMessage = message; // last one wins if several functions hit NaN the same tick
+}
+
+bool ActuatorController::consumeSensorStaleEvent(String &outMessage)
+{
+    if (pendingSensorStaleMessage.length() == 0)
+    {
+        return false;
+    }
+    outMessage = pendingSensorStaleMessage;
+    pendingSensorStaleMessage = "";
     return true;
 }
 
