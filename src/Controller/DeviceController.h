@@ -24,6 +24,9 @@ public:
     // Call every loop() cycle - resyncs NTP once ~24h has passed since the last successful sync (corrects crystal drift), or retries every ~60s if a sync has never succeeded yet (no internet at boot). Never lets a failed attempt clobber the last known-good time.
     void maybeResyncTime();
 
+    // Roadmap #381 - seeds getEpochSeconds() from the server's own clock (DeviceConfig.ServerUtcEpoch) for an install with no internet access, so NTP can never succeed; no-op once real NTP has synced, since that always takes priority.
+    void applyServerEpochFallback(time_t serverUtcEpoch);
+
     // Mosfet activation
     void powerRailPrimary(bool state);
     void powerRailSecondary(bool state);

@@ -35,9 +35,29 @@ static const unsigned long NTP_RESYNC_INTERVAL_SECONDS = 24UL * 60 * 60;
 static unsigned long lastNtpAttemptMs = 0;
 static const unsigned long NTP_RETRY_THROTTLE_MS = 60000UL;
 
+// Server-epoch fallback (roadmap #381) - only ever read while timeClient.isTimeSet() is false, see getEpochSeconds().
+static time_t serverEpochFallbackBase = 0;
+static unsigned long serverEpochFallbackSetAtMs = 0;
+static bool serverEpochFallbackActive = false;
+
 time_t DeviceController::getEpochSeconds()
 {
+  if (!timeClient.isTimeSet() && serverEpochFallbackActive)
+  {
+    return serverEpochFallbackBase + (millis() - serverEpochFallbackSetAtMs) / 1000;
+  }
   return timeClient.getEpochTime();
+}
+
+void DeviceController::applyServerEpochFallback(time_t serverUtcEpoch)
+{
+  if (timeClient.isTimeSet())
+  {
+    return; // real NTP time already available - a coarser server timestamp must never override it
+  }
+  serverEpochFallbackBase = serverUtcEpoch;
+  serverEpochFallbackSetAtMs = millis();
+  serverEpochFallbackActive = true;
 }
 
 void DeviceController::maybeResyncTime()
@@ -463,6 +483,10 @@ void DeviceController::removeBufferedFile(String filename)
 DeviceConfig DeviceController::loadConfig(String configJson)
 {
   ConfigParser::parse(configJson, deviceConfig);
+  if (deviceConfig.serverUtcEpoch > 0)
+  {
+    applyServerEpochFallback((time_t)deviceConfig.serverUtcEpoch);
+  }
   return deviceConfig;
 };
 

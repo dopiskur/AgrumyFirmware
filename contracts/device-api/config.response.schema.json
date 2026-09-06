@@ -19,6 +19,7 @@
     "sleepSeconds",
     "sleepDeep",
     "utcOffsetSeconds",
+    "serverUtcEpoch",
     "deviceSensorEnabled",
     "deviceControllerEnabled",
     "batteryEnabled",
@@ -31,6 +32,7 @@
     "firmwareSha256",
     "enabled",
     "emergencyStop",
+    "simulationModeEnabled",
     "deviceConfigSensor",
     "deviceConfigController",
     "commandVersion",
@@ -119,6 +121,13 @@
       ],
       "description": "Roadmap #39. Current UTC offset in seconds (positive east of UTC) for ServerConfig.ScheduleTimeZone, computed fresh on every response via TimeZoneHelper.GetUtcOffsetSeconds. 0 when no schedule timezone is configured. Firmware adds this to the NTP epoch and feeds the result to gmtime() to get local calendar fields with no on-device timezone database."
     },
+    "serverUtcEpoch": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Roadmap #381. Server wall-clock (Unix seconds) at response time, sent on every poll. Firmware seeds its epoch from this value only while NTP has never synced (fully offline self-hosted install) - DeviceController::applyServerEpochFallback is a no-op once real NTP time is available."
+    },
     "deviceSensorEnabled": {
       "type": [
         "boolean",
@@ -194,6 +203,13 @@
         "null"
       ],
       "description": "Roadmap #230. Tenant-wide fail-closed switch (Tenant.EmergencyStopActive) - true forces every relay off ahead of any rule, independent of deviceConfigController's own relayEnabled."
+    },
+    "simulationModeEnabled": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Roadmap #251 modality A. True tells firmware to start polling GET /api/Device/Simulation every 5s (or on every wake if sleepDeep) for per-metric sensor-reading overrides, applying them before local controller logic runs - same table/principle for a real device as for a fully virtual one (roadmap #343)."
     },
     "deviceConfigSensor": {
       "description": "Populated only when deviceSensorEnabled is true; otherwise serialized as null (System.Text.Json keeps the key).",
@@ -373,7 +389,8 @@
         "waterPumpCooldownSeconds",
         "relayEnabled",
         "relays",
-        "skipWaterPumpForRain"
+        "skipWaterPumpForRain",
+        "manualOverrides"
       ],
       "properties": {
         "idDeviceConfigController": {
@@ -419,6 +436,58 @@
         "skipWaterPumpForRain": {
           "type": "boolean",
           "description": "Roadmap #11. Final AND-NOT veto over WaterPump, computed server-side (DeviceApiController.BuildDeviceConfigAsync) from the assigned zone's SkipWaterPumpWhenRainPredicted AND the install-wide ServerConfig.WeatherRainPredicted - applied by AgrumyFirmware's ActuatorController::initController AFTER the OR of all WaterPump rules, same architectural slot as waterPumpMaxRunSeconds/waterPumpCooldownSeconds above."
+        },
+        "manualOverrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/deviceManualOverridePush"
+          },
+          "description": "Roadmap #219. Only what's still active (not yet past expiresAtEpoch) - a naturally-expired command simply stops appearing here on the next poll, no explicit stop message needed. Applied by AgrumyFirmware's ActuatorController::initController AFTER the rules' OR and the WaterPump rain veto, winning over both."
+        }
+      }
+    },
+    "deviceManualOverridePush": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Roadmap #219. camelCase serialization of api.Models.DeviceManualOverridePush.",
+      "required": [
+        "relayFunction",
+        "mode",
+        "expiresAtEpoch"
+      ],
+      "properties": {
+        "relayFunction": {
+          "type": "integer",
+          "description": "1=Ventilation, 2=Light, 3=Heating, 4=WaterPump (api.Models.RelayFunction) - only Ventilation/Heating/WaterPump are ever actually sent, Light cannot be manually actuated."
+        },
+        "mode": {
+          "type": "integer",
+          "description": "1=Duration (unconditional while inside the window), 2=Target (reuses the same dead-zone threshold math as an automated Threshold condition) - api.Models.ManualOverrideMode."
+        },
+        "expiresAtEpoch": {
+          "type": "integer",
+          "description": "Unix seconds. Hard safety cap regardless of mode - past this, the override no longer applies this tick even if a Target-mode condition would otherwise say to force on."
+        },
+        "targetMetric": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Target mode only - 1=Temperature, 3=Humidity, 5=Moisture (api.Models.SensorMetric's numeric values, only this subset is valid here). Null for Duration mode."
+        },
+        "targetThreshold": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Target mode only, null for Duration mode."
+        },
+        "targetHysteresis": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Target mode only, null for Duration mode."
         }
       }
     },

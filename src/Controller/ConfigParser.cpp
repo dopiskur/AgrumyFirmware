@@ -135,6 +135,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.sleepDeep = config["sleepDeep"];
   // Keeps the current offset if an older server doesn't send this key - never silently jump to UTC just because the key was missing.
   currentConfig.utcOffsetSeconds = config["utcOffsetSeconds"] | currentConfig.utcOffsetSeconds;
+  currentConfig.serverUtcEpoch = config["serverUtcEpoch"] | 0L;
   currentConfig.deviceSensorEnabled = config["deviceSensorEnabled"];
   currentConfig.deviceControllerEnabled = config["deviceControllerEnabled"];
   currentConfig.batteryEnabled = config["batteryEnabled"];

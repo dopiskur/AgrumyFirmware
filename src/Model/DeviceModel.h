@@ -326,6 +326,9 @@ struct DeviceConfig
     // Current UTC offset in seconds (positive east of UTC), refreshed on every config sync; lets scheduleRelayFunction() compute local day/time with plain integer math, no on-device IANA/DST database.
     int utcOffsetSeconds = 0;
 
+    // Server wall-clock at response time (roadmap #381) - DeviceController::loadConfig feeds this to applyServerEpochFallback(), which only takes effect while NTP has never synced.
+    long serverUtcEpoch = 0;
+
     bool deviceSensorEnabled;
     bool deviceControllerEnabled;
     bool batteryEnabled;
