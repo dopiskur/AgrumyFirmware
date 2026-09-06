@@ -406,6 +406,7 @@ struct ServiceEndpoint
     String apiAuthenticate = "/api/Device/Authenticate";
     String apiEvent = "/api/Device/Event";
     String apiCommandAck = "/api/Device/Command/Ack";
+    String apiHardResetPending = "/api/Device/HardResetPending";
     String apiDiscoveryReport = "/api/Discovery/Report";
 
     String apiSensorDataPost="/api/SensorData";

@@ -138,6 +138,71 @@ ServiceData ServiceController::requestPost(JsonDocument jsonBuffer, ServiceReque
     return serviceData;
 }
 
+ServiceData ServiceController::requestGet(ServiceRequest service)
+{
+    ServiceData serviceData;
+
+    if ((WiFi.status() == WL_CONNECTED))
+    {
+        HTTPClient http;
+        String serviceURL = service.url();
+        Serial.println("[Service] GET: " + serviceURL);
+
+        if (service.isHttps)
+        {
+            static WiFiClientSecure secureClient;
+            if (deviceConfig.servicePublicKey.length() > 0)
+            {
+                secureClient.setCACert(deviceConfig.servicePublicKey.c_str());
+            }
+            else
+            {
+                secureClient.setCACert(nullptr);
+                secureClient.setCACertBundle(rootca_crt_bundle_start);
+            }
+            http.begin(secureClient, serviceURL);
+        }
+        else
+        {
+            http.begin(serviceURL);
+        }
+        // apiId/apiKey/Authorization ride along like every other request - harmless when the target endpoint (e.g. HardResetPending) ignores them and authenticates by query param instead.
+        http.addHeader("apiId", service.header.apiId);
+        http.addHeader("apiKey", service.header.apiKey);
+        http.addHeader("Authorization", apiAuth);
+
+        int httpCode = http.GET();
+        if (httpCode > 0)
+        {
+            Serial.print("[HTTP] Code: ");
+            Serial.println(httpCode);
+            serviceData.eventlog.errorCode = httpCode;
+            if (httpCode == 200)
+            {
+                serviceData.eventlog.error = false;
+                serviceData.payload = http.getString();
+            }
+            else
+            {
+                serviceData.eventlog.error = true;
+            }
+        }
+        else
+        {
+            Serial.printf("[HTTP] Failed, error: %s\n", http.errorToString(httpCode).c_str());
+            serviceData.eventlog.error = true;
+            serviceData.eventlog.errorCode = httpCode;
+        }
+        http.end();
+    }
+    else
+    {
+        serviceData.eventlog.errorCode = 1000;
+        serviceData.eventlog.errorData = "Wifi not available";
+    }
+    return serviceData;
+}
+
 // Fire-and-forget: never checks the result or retries, so a failed push doesn't chase itself with another event about its own failure.
 void ServiceController::pushEvent(ServiceRequest service, String eventType, String message, int commandId)
 {
@@ -429,6 +494,14 @@ bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequ
     return false;
 }
 
+// Bare "true"/"false" JSON body, no session/apiKey required server-side - the query-string apiId is the only thing that endpoint trusts.
+bool ServiceController::isHardResetPending(ServiceRequest serviceRequest, const String &apiId)
+{
+    serviceRequest.endpoint = serviceEndpoint.apiHardResetPending + "?apiId=" + apiId;
+    ServiceData serviceData = requestGet(serviceRequest);
+    return !serviceData.eventlog.error && serviceData.payload.indexOf("true") >= 0;
+}
+
 void ServiceController::apiAuthenticate(DeviceConfig deviceConfig, ServiceRequest serviceRequest, DeviceController& device)
 {
     Serial.println("[Service] apiAuthentication: ");
@@ -440,22 +513,16 @@ void ServiceController::apiAuthenticate(DeviceConfig deviceConfig, ServiceReques
     JsonDocument payload;
     serviceData = requestPost(payload, serviceRequest);
 
-    // Tolerate a transient auth failure - factory reset only after several consecutive 401s, not the first one.
-    static int consecutiveAuthFailures = 0;
-    const int MAX_CONSECUTIVE_AUTH_FAILURES = 3;
+    // Roadmap #357: a repeated 401 NEVER wipes the device on its own anymore (a transient server-side outage - cache, DB restore, a bad deploy - used to nuke the whole fleet simultaneously). The only path to a factory reset now is an admin explicitly setting the hard-reset flag from the Web console, checked here via apiId alone since a broken apiKey is exactly the scenario this exists for.
     if(serviceData.eventlog.errorCode==401){
-        consecutiveAuthFailures++;
-        Serial.printf("[Service] Device failed authentication (%d/%d consecutive)\n", consecutiveAuthFailures, MAX_CONSECUTIVE_AUTH_FAILURES);
-        if (consecutiveAuthFailures >= MAX_CONSECUTIVE_AUTH_FAILURES)
+        Serial.println("[Service] Device failed authentication - checking whether an admin requested a hard reset");
+        if (isHardResetPending(serviceRequest, deviceConfig.apiId))
         {
-            Serial.println("[Service] Too many consecutive auth failures, reseting device to defaults...");
-            // Best-effort: this push will very likely also fail (no valid apiAuth yet) - expected, not special-cased.
-            pushEvent(serviceRequest, "AuthFailed", "apiId/apiKey rejected by server, consecutive failures: " + String(consecutiveAuthFailures));
-            device.reset();
+            Serial.println("[Service] Hard reset requested by admin - reseting device to defaults...");
+            device.reset(); // never returns
         }
         return; // no valid payload to parse below on a 401 - avoid setting apiAuth from an error body
     }
-    consecutiveAuthFailures = 0;
 
     DeserializationError error = deserializeJson(payload, serviceData.payload);
     if (error)
@@ -560,6 +627,12 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
                 pushEvent(serviceRequest, "ConfigSyncFailed", "code=" + String(newConfig.eventlog.errorCode) + " " + newConfig.eventlog.errorData);
                 receivedNewConfig = false;
             } else {
+                // Roadmap #357: the same admin-set flag isHardResetPending() checks on a 401 also rides along here on an ordinary, successfully-authenticated poll - a healthy device doesn't need the narrow apiId-only path, it just sees this in its next config.
+                if (newConfig.reset) {
+                    Serial.println("[Service] Hard reset requested by admin - reseting device to defaults...");
+                    device.reset(); // never returns
+                }
+
                 Serial.println("[Service] New config received, saving new config");
                 device.saveConfigFile(serviceData.payload); // backs up the old config.json before overwriting it
                 device.waitForFileCommitted("config.json"); // verified, not a bare delay()
