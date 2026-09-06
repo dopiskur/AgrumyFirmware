@@ -1,101 +1,80 @@
 #include <unity.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include "../../src/Logic/RelayLogic.h"
+
+// Reads threshold_vectors.csv, shared with AgrumyService's RuleConditionEvaluatorTests, so the two independently-implemented formulas can't silently drift apart.
+
+struct ThresholdVector
+{
+    std::string name;
+    bool currentlyOn;
+    double reading;
+    double threshold;
+    double hysteresis;
+    bool turnsOnAboveThreshold;
+    bool expected;
+};
+
+static bool parseBool(const std::string &field)
+{
+    return field == "true";
+}
+
+// Resolved via __FILE__ rather than cwd, since `pio test` may run from different working directories.
+static std::vector<ThresholdVector> loadVectors()
+{
+    std::string path = __FILE__;
+    path = path.substr(0, path.find_last_of("/\\") + 1) + "threshold_vectors.csv";
+    std::ifstream file(path);
+    std::vector<ThresholdVector> vectors;
+    std::string line;
+    bool headerSkipped = false;
+    while (std::getline(file, line))
+    {
+        if (line.empty() || line[0] == '#')
+        {
+            continue;
+        }
+        if (!headerSkipped)
+        {
+            headerSkipped = true;
+            continue;
+        }
+        std::stringstream ss(line);
+        std::string field;
+        ThresholdVector v;
+        std::getline(ss, v.name, ',');
+        std::getline(ss, field, ','); v.currentlyOn = parseBool(field);
+        std::getline(ss, field, ','); v.reading = std::stod(field);
+        std::getline(ss, field, ','); v.threshold = std::stod(field);
+        std::getline(ss, field, ','); v.hysteresis = std::stod(field);
+        std::getline(ss, field, ','); v.turnsOnAboveThreshold = parseBool(field);
+        std::getline(ss, field, ','); v.expected = parseBool(field);
+        vectors.push_back(v);
+    }
+    return vectors;
+}
 
 void setUp(void) {}
 void tearDown(void) {}
 
-// Normal direction (turnsOnAboveThreshold=false): heating/light/waterPump. Turns ON when reading drops BELOW threshold, OFF once it climbs back to/above threshold+hysteresis. E.g. heating: threshold=tempLow=18, hysteresis=1 -> on below 18, off at >=19.
-
-void test_Normal_Off_ReadingBelowThreshold_TurnsOn(void)
+void test_ThresholdVectors_MatchComputeThresholdState(void)
 {
-    TEST_ASSERT_TRUE(computeThresholdState(false, 17.0, 18.0, 1.0, false));
-}
-
-void test_Normal_Off_ReadingAtThreshold_StaysOff(void)
-{
-    // strictly-less-than: reading == threshold does not count as "below".
-    TEST_ASSERT_FALSE(computeThresholdState(false, 18.0, 18.0, 1.0, false));
-}
-
-void test_Normal_Off_ReadingInDeadZone_StaysOff(void)
-{
-    // 18.5 is between threshold (18) and threshold+hysteresis (19) - not below threshold, so an
-    // already-off relay must not spuriously turn on from inside the dead zone.
-    TEST_ASSERT_FALSE(computeThresholdState(false, 18.5, 18.0, 1.0, false));
-}
-
-void test_Normal_On_ReadingStillInDeadZone_StaysOn(void)
-{
-    // The core dead-zone guarantee: once on, a reading that has climbed back above threshold but
-    // NOT yet reached threshold+hysteresis must NOT turn off - this is what prevents chattering.
-    TEST_ASSERT_TRUE(computeThresholdState(true, 18.5, 18.0, 1.0, false));
-}
-
-void test_Normal_On_ReadingJustBelowUpperBound_StaysOn(void)
-{
-    TEST_ASSERT_TRUE(computeThresholdState(true, 18.999, 18.0, 1.0, false));
-}
-
-void test_Normal_On_ReadingAtUpperBound_TurnsOff(void)
-{
-    // reading >= threshold+hysteresis is the OFF condition - inclusive of the boundary itself.
-    TEST_ASSERT_FALSE(computeThresholdState(true, 19.0, 18.0, 1.0, false));
-}
-
-void test_Normal_On_ReadingWellAboveUpperBound_TurnsOff(void)
-{
-    TEST_ASSERT_FALSE(computeThresholdState(true, 25.0, 18.0, 1.0, false));
-}
-
-// Inverted direction (turnsOnAboveThreshold=true): ventilation only. Turns ON when reading climbs ABOVE threshold, OFF once it drops back to/below threshold-hysteresis - opposite polarity from the other three.
-
-void test_Inverted_Off_ReadingAboveThreshold_TurnsOn(void)
-{
-    TEST_ASSERT_TRUE(computeThresholdState(false, 85.0, 80.0, 5.0, true));
-}
-
-void test_Inverted_Off_ReadingAtThreshold_StaysOff(void)
-{
-    TEST_ASSERT_FALSE(computeThresholdState(false, 80.0, 80.0, 5.0, true));
-}
-
-void test_Inverted_Off_ReadingInDeadZone_StaysOff(void)
-{
-    // 77 is between threshold-hysteresis (75) and threshold (80) - not above threshold.
-    TEST_ASSERT_FALSE(computeThresholdState(false, 77.0, 80.0, 5.0, true));
-}
-
-void test_Inverted_On_ReadingStillInDeadZone_StaysOn(void)
-{
-    TEST_ASSERT_TRUE(computeThresholdState(true, 77.0, 80.0, 5.0, true));
-}
-
-void test_Inverted_On_ReadingAtLowerBound_TurnsOff(void)
-{
-    // reading <= threshold-hysteresis is the OFF condition - inclusive of the boundary itself.
-    TEST_ASSERT_FALSE(computeThresholdState(true, 75.0, 80.0, 5.0, true));
-}
-
-void test_Inverted_On_ReadingWellBelowLowerBound_TurnsOff(void)
-{
-    TEST_ASSERT_FALSE(computeThresholdState(true, 50.0, 80.0, 5.0, true));
+    std::vector<ThresholdVector> vectors = loadVectors();
+    TEST_ASSERT_TRUE_MESSAGE(!vectors.empty(), "threshold_vectors.csv failed to load or is empty");
+    for (const ThresholdVector &v : vectors)
+    {
+        bool actual = computeThresholdState(v.currentlyOn, v.reading, v.threshold, v.hysteresis, v.turnsOnAboveThreshold);
+        TEST_ASSERT_EQUAL_MESSAGE(v.expected, actual, v.name.c_str());
+    }
 }
 
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_Normal_Off_ReadingBelowThreshold_TurnsOn);
-    RUN_TEST(test_Normal_Off_ReadingAtThreshold_StaysOff);
-    RUN_TEST(test_Normal_Off_ReadingInDeadZone_StaysOff);
-    RUN_TEST(test_Normal_On_ReadingStillInDeadZone_StaysOn);
-    RUN_TEST(test_Normal_On_ReadingJustBelowUpperBound_StaysOn);
-    RUN_TEST(test_Normal_On_ReadingAtUpperBound_TurnsOff);
-    RUN_TEST(test_Normal_On_ReadingWellAboveUpperBound_TurnsOff);
-    RUN_TEST(test_Inverted_Off_ReadingAboveThreshold_TurnsOn);
-    RUN_TEST(test_Inverted_Off_ReadingAtThreshold_StaysOff);
-    RUN_TEST(test_Inverted_Off_ReadingInDeadZone_StaysOff);
-    RUN_TEST(test_Inverted_On_ReadingStillInDeadZone_StaysOn);
-    RUN_TEST(test_Inverted_On_ReadingAtLowerBound_TurnsOff);
-    RUN_TEST(test_Inverted_On_ReadingWellBelowLowerBound_TurnsOff);
+    RUN_TEST(test_ThresholdVectors_MatchComputeThresholdState);
     return UNITY_END();
 }
