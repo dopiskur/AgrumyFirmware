@@ -130,28 +130,32 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   {
     JsonObject deviceConfigController = config["deviceConfigController"];
 
-    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap). A rule with zero valid conditions after the inner loop is skipped, not stored empty.
+    // Capped at MAX_RULES - ArduinoJson has no dynamic growth on-device, extras are silently dropped (server enforces a matching cap, and this is a whole-rule cap, not the per-rule condition truncation #367 fixed below).
     JsonArray rules = deviceConfigController["rules"];
     currentConfig.configController.ruleCount = 0;
+    currentConfig.rulesRejectedCount = 0;
     for (JsonObject r : rules)
     {
         if (currentConfig.configController.ruleCount >= MAX_RULES)
         {
             break;
         }
-        Rule &rule = currentConfig.configController.rules[currentConfig.configController.ruleCount];
-        rule.targetFunction = r["relayFunction"];
 
-        // Roadmap #212: flat AND/OR list, capped at MAX_CONDITIONS_PER_RULE - same silent-truncation/skip-unrecognized-type reasoning as the rules[] loop above, one level deeper.
-        rule.conditionCount = 0;
+        // Roadmap #367: an unrecognized conditionType, or more conditions than MAX_CONDITIONS_PER_RULE, used to silently drop just that condition/the excess - quietly changing an "A AND B" rule into just "A". Parsed into a local candidate first so a bad condition rejects the WHOLE rule instead of storing a partial one.
         JsonArray conditions = r["conditions"];
+        if ((int)conditions.size() > MAX_CONDITIONS_PER_RULE)
+        {
+            currentConfig.rulesRejectedCount++;
+            continue;
+        }
+
+        Rule candidate;
+        candidate.targetFunction = r["relayFunction"];
+        candidate.conditionCount = 0;
+        bool rejected = false;
         for (JsonObject c : conditions)
         {
-            if (rule.conditionCount >= MAX_CONDITIONS_PER_RULE)
-            {
-                break;
-            }
-            Condition &condition = rule.conditions[rule.conditionCount];
+            Condition &condition = candidate.conditions[candidate.conditionCount];
             condition.type = c["conditionType"];
             condition.operatorBefore = c["operator"] | 0;
             JsonObject conditionConfig = c["conditionConfig"];
@@ -171,14 +175,22 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
                 condition.duration = conditionConfig["duration"];
                 break;
             default:
-                continue; // unrecognized conditionType - skip, do not advance conditionCount
+                rejected = true; // unrecognized conditionType - the whole rule is rejected below, not just this condition
+                break;
             }
-            rule.conditionCount++;
+            if (rejected)
+            {
+                break;
+            }
+            candidate.conditionCount++;
         }
-        if (rule.conditionCount == 0)
+
+        if (rejected || candidate.conditionCount == 0)
         {
-            continue; // nothing valid to evaluate - skip storing this rule, do not advance ruleCount
+            currentConfig.rulesRejectedCount++;
+            continue;
         }
+        currentConfig.configController.rules[currentConfig.configController.ruleCount] = candidate;
         currentConfig.configController.ruleCount++;
     }
 

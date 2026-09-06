@@ -343,6 +343,9 @@ struct DeviceConfig
     ConfigPin configPin;
 
     EventLog eventlog;
+
+    // Roadmap #367: how many rules ConfigParser::parse() rejected wholesale this cycle (unrecognized/over-cap condition) - checked once by whoever applies newConfig, then its job is done.
+    int rulesRejectedCount = 0;
 };
 
 

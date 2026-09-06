@@ -680,6 +680,11 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         deviceConfig = newConfig;
         Serial.println("[Service] Config hot-applied without reboot (version " + String(deviceConfig.configVersion) + ")");
         pushEvent(serviceRequest, "ConfigApplied", "version=" + String(deviceConfig.configVersion));
+        // Roadmap #367: surfaced so an admin actually finds out a rule silently isn't doing what they configured, instead of a quietly-truncated AND/OR chain misbehaving forever.
+        if (deviceConfig.rulesRejectedCount > 0)
+        {
+            pushEvent(serviceRequest, "RuleRejected", String(deviceConfig.rulesRejectedCount) + " rule(s) rejected - unrecognized or over-cap condition, not evaluated");
+        }
         return true;
     }
 
