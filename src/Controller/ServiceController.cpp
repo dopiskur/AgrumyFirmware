@@ -580,22 +580,20 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         return false;
     }
 
-    // Reboot only after several failed cycles in a row - a reboot clears a fragmented heap but shouldn't fire on one transient hiccup.
-    static int consecutiveFailures = 0;
-    const int MAX_CONSECUTIVE_CONFIG_FAILURES = 3;
-    if(serviceData.eventlog.error){
-        consecutiveFailures++;
+    if (serviceData.eventlog.error)
+    {
         Serial.print("[Service] Error accessing service point: ");
         Serial.println(serviceData.eventlog.errorCode);
-        Serial.printf("[Service] Consecutive failed config cycles: %d/%d\n", consecutiveFailures, MAX_CONSECUTIVE_CONFIG_FAILURES);
-        if (consecutiveFailures >= MAX_CONSECUTIVE_CONFIG_FAILURES)
-        {
-            Serial.println("[Service] Too many consecutive failures, rebooting.");
-            pushEvent(serviceRequest, "ConfigSyncFailed", "consecutive failures: " + String(consecutiveFailures));
-            device.reboot();
-        }
-    } else {
-        consecutiveFailures = 0;
+    }
+
+    // Roadmap #360: a prolonged server/network outage must not, by itself, reboot the device (same "keep running on local rules" philosophy as #357's auth-failure fix) - a raw failed-HTTP-cycle count says nothing about the device's own health. Reboot only on real memory pressure, which a reboot actually fixes.
+    const uint32_t LOW_HEAP_REBOOT_THRESHOLD_BYTES = 20000;
+    uint32_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < LOW_HEAP_REBOOT_THRESHOLD_BYTES)
+    {
+        Serial.printf("[Service] Free heap critically low (%u bytes), rebooting.\n", freeHeap);
+        pushEvent(serviceRequest, "LowMemoryReboot", "freeHeap=" + String(freeHeap));
+        device.reboot();
     }
 
     // Derive firmware state from the config about to run - the new one if received, else the boot config (admin may set the flag without bumping configVersion -> 200, no body).
