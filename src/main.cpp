@@ -78,8 +78,8 @@ const char *firmware = FIRMWARE_VERSION;
 const String CONFIG_BASE = "deviceRegistration.json";
 const String CONFIG_DEFAULTS = "config.json";
 
-// Default 8192-byte loopTask stack overflows under chained TLS handshakes (apiConfig's 401 retry into apiAuthenticate); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE build-flag fix, so SET_LOOP_TASK_STACK_SIZE is used instead - 16384 still wasn't enough empirically, 24576 is.
-SET_LOOP_TASK_STACK_SIZE(24576);
+// Default 8192-byte loopTask stack overflows under chained TLS handshakes (apiConfig's 401 retry into apiAuthenticate); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE build-flag fix, so SET_LOOP_TASK_STACK_SIZE is used instead. 24576 was enough for that path, but setup()'s own loadConfig/ConfigParser::parse call chain (JsonDocument, DeviceConfig struct copies, nested String concatenations) overflowed even 32768, confirmed via vApplicationStackOverflowHook - 49152 covers it with margin.
+SET_LOOP_TASK_STACK_SIZE(49152);
 
 // Reboots if a loop() cycle wedges before completing. Sized to clear ~4 sequential HTTPClient calls per cycle (config sync, re-auth, retry, sensor push) at the default 5s TCP timeout each, with margin. Independent of server-set sleepSeconds - the inter-cycle sleep is fed separately in loop().
 static const uint32_t WDT_TIMEOUT_SECONDS = 90;

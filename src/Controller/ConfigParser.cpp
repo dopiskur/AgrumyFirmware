@@ -21,7 +21,7 @@ String ConfigParser::maskApiKeyInJson(const String &json)
   return json.substring(0, start) + ServiceController::maskSecret(json.substring(start, end)) + json.substring(end);
 }
 
-DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentConfig)
+void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 {
   Serial.println("[Device] Load config: " + maskApiKeyInJson(configJson));
 
@@ -36,7 +36,7 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
     currentConfig.eventlog.errorCode = 20; // 10 is reserved for registerDevice's own gate
     currentConfig.eventlog.errorData = error.c_str();
 
-    return currentConfig;
+    return;
   }
 
   String servicePoint = config["servicePoint"];
@@ -52,7 +52,7 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
     currentConfig.eventlog.error = true;
     currentConfig.eventlog.errorCode = 21; // 20 is deserializeJson failure, 10 is reserved for registerDevice's own gate
     currentConfig.eventlog.errorData = "missing apiId/apiKey/servicePoint";
-    return currentConfig;
+    return;
   }
   // currentConfig is re-parsed in place on every call, so a failure flagged above must not linger into the next call that succeeds.
   currentConfig.eventlog.error = false;
@@ -203,6 +203,4 @@ DeviceConfig ConfigParser::parse(const String &configJson, DeviceConfig currentC
         currentConfig.configController.relayCount++;
     }
   }
-
-  return currentConfig;
 }

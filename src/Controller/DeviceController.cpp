@@ -388,7 +388,7 @@ void DeviceController::removeBufferedFile(String filename)
 // Mutates the single canonical deviceConfig, not just a local copy.
 DeviceConfig DeviceController::loadConfig(String configJson)
 {
-  deviceConfig = ConfigParser::parse(configJson, deviceConfig);
+  ConfigParser::parse(configJson, deviceConfig);
   return deviceConfig;
 };
 
