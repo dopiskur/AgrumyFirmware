@@ -177,7 +177,7 @@ void setup()
   }
 
   device.initializeWifi();
-  // wifiManager.autoConnect() inside initializeWifi() already blocks until connected, but WL_CONNECTED can report before the IP stack/DNS resolver is actually ready for a real HTTP request - this covers that gap, not the connection itself.
+  // #359: initializeWifi()'s autoConnect() now has a 120s portal timeout instead of blocking forever, so this may fall through still disconnected - loop() retries in the background from here. When it IS connected, WL_CONNECTED can still report before the IP stack/DNS resolver is actually ready for a real HTTP request - this delay covers that gap, not the connection itself.
   delay(500);
 
   // 3 config-triggered reboots in a row, each within 60s of its own boot, means the last config update is likely the cause - load the backup instead of repeating the same crash forever.
@@ -250,6 +250,16 @@ void setup()
 void loop()
 {
   Serial.println("[Loop]-----> Start <-----[Loop]");
+
+  // #359: a portal-timeout boot (or a later drop) leaves WiFi disconnected with nothing else retrying it - try again here, throttled so it does not spin every cycle.
+  static unsigned long lastWifiRetryMs = 0;
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryMs > 60000UL)
+  {
+    Serial.println("[Loop] WiFi not connected - attempting reconnect");
+    WiFi.reconnect();
+    lastWifiRetryMs = millis();
+  }
+
   if (deviceConfig.batteryEnabled)
   {
     device.powerRailPrimary(true);

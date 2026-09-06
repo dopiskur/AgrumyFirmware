@@ -166,6 +166,8 @@ void DeviceController::initializeWifi()
 
   WiFi.mode(WIFI_STA);
   WiFiManager wifiManager;
+  // A router still rebooting (post-outage) at device boot must not block setup() forever - 120s times out the portal so the device falls through to loop() on cached config and retries WiFi in the background instead of freezing releys at their power-on state indefinitely.
+  wifiManager.setConfigPortalTimeout(120);
   wifiManager.autoConnect();
 }
 
