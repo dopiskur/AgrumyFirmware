@@ -2,12 +2,53 @@
 // OTA/buffer/command queue - EU868's tiny payload limit leaves no room for that stack. Kept as one
 // file with the WiFi profile below (not a separate main.cpp) so both profiles stay buildable from
 // the same source tree, same pattern as the existing AGRUMY_KIT_KC868_A6 board-variant branching.
-#ifdef AGRUMY_PROFILE_LORA
+// AGRUMY_LORA_GATEWAY_BRIDGE is a third, unrelated device role (the LoRa private-protocol Gateway's
+// mains-powered radio-frontend board, see Controller/LoRaGatewayBridgeController) - checked first
+// since it never sleeps and shares nothing with either sensor-node profile below.
+#if defined(AGRUMY_LORA_GATEWAY_BRIDGE)
+
+#include "LittleFS.h"
+#include "Controller/LoRaGatewayBridgeController.h"
+
+LoRaGatewayBridgeController loRaGatewayBridge;
+
+void setup()
+{
+    Serial.begin(115200);
+    Serial.println();
+    Serial.println("[LoRaBridge] Initialization started");
+
+    if (!LittleFS.begin(true))
+    {
+        Serial.println("[LoRaBridge] LittleFS mount/format FAILED");
+    }
+
+    if (!loRaGatewayBridge.begin())
+    {
+        Serial.println("[LoRaBridge] begin() failed - check loraGatewayBridgeConfig.json");
+    }
+}
+
+void loop()
+{
+    loRaGatewayBridge.runOnce();
+}
+
+#elif defined(AGRUMY_PROFILE_LORA)
 
 #include <esp_task_wdt.h>
 #include <esp_sleep.h>
 #include "LittleFS.h"
+// AGRUMY_LORA_TRANSPORT_PRIVATE swaps in the private-protocol sensor-node controller (paired with a
+// Gateway running GatewayProfile.LoRaPrivateProtocol) instead of the default LoRaWAN/ChirpStack one -
+// same public begin()/runCycleAndGetSleepSeconds(bool) shape on both, so the setup()/loop() body below is shared unchanged.
+#ifdef AGRUMY_LORA_TRANSPORT_PRIVATE
+#include "Controller/LoRaPrivateController.h"
+using ActiveLoRaController = LoRaPrivateController;
+#else
 #include "Controller/LoRaController.h"
+using ActiveLoRaController = LoRaController;
+#endif
 
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "0.0.0-dev"
@@ -15,7 +56,7 @@
 
 static const uint32_t LORA_WDT_TIMEOUT_SECONDS = 30;
 
-LoRaController loRaController;
+ActiveLoRaController loRaController;
 
 void setup()
 {
@@ -279,4 +320,4 @@ void loop()
   }
 }
 
-#endif // AGRUMY_PROFILE_LORA
+#endif // AGRUMY_LORA_GATEWAY_BRIDGE / AGRUMY_PROFILE_LORA
