@@ -49,12 +49,12 @@ void relayPinMode(int pin, int i2cAddress, int sdaPin, int sclPin)
     pinMode(pin, OUTPUT);
 }
 
-void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin)
+void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin, bool activeLow)
 {
     if (i2cAddress != 0)
     {
         ensureI2CReady(i2cAddress, sdaPin, sclPin);
-        // PCF8574 relay expander is active-LOW: writing 0 turns the relay ON, 1 turns it OFF - opposite of the direct-GPIO HIGH-is-on convention every other kit uses.
+        // PCF8574 relay expander is active-LOW: writing 0 turns the relay ON, 1 turns it OFF - opposite of the direct-GPIO HIGH-is-on convention every other kit uses. Fixed by the expander's own wiring, activeLow (roadmap #366) doesn't apply here.
         if (on)
         {
             i2cRelayShadow &= ~(1 << pin);
@@ -66,15 +66,18 @@ void relayWrite(int pin, bool on, int i2cAddress, int sdaPin, int sclPin)
         i2cWriteShadow(i2cAddress);
         return;
     }
-    digitalWrite(pin, on ? HIGH : LOW);
+    // Roadmap #366: activeLow flips which level means "on" for a direct-GPIO relay board wired opposite of this codebase's default HIGH-is-on assumption.
+    bool driveHigh = activeLow ? !on : on;
+    digitalWrite(pin, driveHigh ? HIGH : LOW);
 }
 
-bool relayRead(int pin, int i2cAddress, int sdaPin, int sclPin)
+bool relayRead(int pin, int i2cAddress, int sdaPin, int sclPin, bool activeLow)
 {
     if (i2cAddress != 0)
     {
         ensureI2CReady(i2cAddress, sdaPin, sclPin);
         return (i2cRelayShadow & (1 << pin)) == 0; // 0 bit = relay on (active-low)
     }
-    return digitalRead(pin) == HIGH;
+    bool isHigh = digitalRead(pin) == HIGH;
+    return activeLow ? !isHigh : isHigh;
 }

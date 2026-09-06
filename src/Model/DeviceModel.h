@@ -124,6 +124,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int RELAY_I2C_SDA=0;
     int RELAY_I2C_SCL=0;
 #endif
+
+    // Roadmap #366: direct-GPIO kits only (RELAY_I2C_ADDRESS==0) - a PCF8574-expander kit like KC868-A6 already drives its relays active-low by the expander's own wiring convention (see RelayIO.cpp), unrelated to this flag. false on every kit below since none has been field-verified as active-low yet; this only adds the lever, it changes no kit's current behavior.
+    bool RELAY_ACTIVE_LOW=false;
 };
 
 struct ModuleEnabled

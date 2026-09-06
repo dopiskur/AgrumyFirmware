@@ -135,7 +135,8 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
     int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
     int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
-    bool desiredState = relayRead(pin, i2cAddr, i2cSda, i2cScl); // whatever threshold/interval/schedule already wrote this tick
+    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
+    bool desiredState = relayRead(pin, i2cAddr, i2cSda, i2cScl, activeLow); // whatever threshold/interval/schedule already wrote this tick
     int maxRunSeconds = deviceConfig.configController.waterPumpMaxRunSeconds;
     int cooldownSeconds = deviceConfig.configController.waterPumpCooldownSeconds;
 
@@ -160,7 +161,7 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
 
     if (finalState != desiredState)
     {
-        relayWrite(pin, finalState, i2cAddr, i2cSda, i2cScl);
+        relayWrite(pin, finalState, i2cAddr, i2cSda, i2cScl, activeLow);
         if (ceilingHit)
         {
             reportSafetyLimitTripped("WaterPump max run time exceeded (" + String(maxRunSeconds) + "s)");
@@ -239,6 +240,7 @@ void ActuatorController::driveEveryAssignedRelayOff() const
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
     int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
     int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
+    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
 
     for (int i = 0; i < deviceConfig.configController.relayCount; i++)
     {
@@ -253,7 +255,7 @@ void ActuatorController::driveEveryAssignedRelayOff() const
             continue;
         }
         relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
-        relayWrite(pin, false, i2cAddr, i2cSda, i2cScl);
+        relayWrite(pin, false, i2cAddr, i2cSda, i2cScl, activeLow);
     }
 
     // Roadmap #365: see initController()'s matching check for why this is checked right after every relayWrite pass.
@@ -275,6 +277,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
     int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
     int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
+    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
 
     // Densify the sparse relays[] list into a per-physical-slot lookup - waterPump*SinceEpoch/lastConfiguredType below are indexed by physical slot (0..MAX_RELAY_SLOTS-1), not by position in relays[].
     int configuredType[MAX_RELAY_SLOTS] = {0};
@@ -328,7 +331,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
 
         // Threshold rules need the function's CURRENT physical state for hysteresis math - read once from the first assigned pin; every pin sharing one function is kept in sync by the write below, so any one is representative.
         relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
-        bool isCurrentlyOn = relayRead(pins[0], i2cAddr, i2cSda, i2cScl);
+        bool isCurrentlyOn = relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
 
         bool shouldBeOn = false;
         for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
@@ -364,7 +367,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         for (int i = 0; i < pinCount; i++)
         {
             relayPinMode(pins[i], i2cAddr, i2cSda, i2cScl);
-            relayWrite(pins[i], shouldBeOn, i2cAddr, i2cSda, i2cScl);
+            relayWrite(pins[i], shouldBeOn, i2cAddr, i2cSda, i2cScl, activeLow);
         }
     }
 
