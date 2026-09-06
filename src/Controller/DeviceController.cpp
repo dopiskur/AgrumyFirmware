@@ -28,9 +28,40 @@ RTC_DATA_ATTR static bool rtcConfigJustAppliedPending = false;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+// Wall-clock epoch of the last successful sync (0 until the first one) - compared against the CURRENT epoch, not an uptime/loop counter, so the 24h cadence self-corrects regardless of when in a boot cycle it's checked and survives a reboot cleanly (setupController()'s own boot-time sync already resets this).
+static unsigned long lastNtpSyncEpoch = 0;
+static const unsigned long NTP_RESYNC_INTERVAL_SECONDS = 24UL * 60 * 60;
+// Short, millis()-based throttle only for the "never synced yet" retry path - a 49-day millis() wraparound is irrelevant at this timescale, unlike the epoch-based comparison above.
+static unsigned long lastNtpAttemptMs = 0;
+static const unsigned long NTP_RETRY_THROTTLE_MS = 60000UL;
+
 time_t DeviceController::getEpochSeconds()
 {
   return timeClient.getEpochTime();
+}
+
+void DeviceController::maybeResyncTime()
+{
+  bool needsSync = !timeClient.isTimeSet() || (timeClient.getEpochTime() - lastNtpSyncEpoch) >= NTP_RESYNC_INTERVAL_SECONDS;
+  if (!needsSync)
+  {
+    return;
+  }
+  if (millis() - lastNtpAttemptMs < NTP_RETRY_THROTTLE_MS)
+  {
+    return; // still-unsynced retries are throttled so a persistent outage doesn't spam NTP requests every loop cycle
+  }
+  lastNtpAttemptMs = millis();
+
+  if (timeClient.forceUpdate())
+  {
+    lastNtpSyncEpoch = timeClient.getEpochTime();
+    Serial.println("[Device] NTP resync succeeded");
+  }
+  else
+  {
+    Serial.println("[Device] NTP resync failed - keeping last known time");
+  }
 }
 
 String DeviceController::getDateTime()
@@ -53,6 +84,10 @@ void DeviceController::setupController()
 
   timeClient.begin();
   timeClient.update();
+  if (timeClient.isTimeSet())
+  {
+    lastNtpSyncEpoch = timeClient.getEpochTime();
+  }
 }
 
 bool DeviceController::saveFile(String data, String filename)

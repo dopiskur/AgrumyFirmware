@@ -8,6 +8,9 @@
 #include "ServiceController.h"
 #include "ActuatorController.h"
 
+// Roadmap #361: 2023-11-14 UTC, safely before any real deployment - distinguishes a genuine epoch from the 0 (or near-0) value NTPClient reports before its first successful sync.
+static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
+
 void ActuatorController::setupController(){
 
 
@@ -111,9 +114,10 @@ bool ActuatorController::evaluateCondition(const Condition &condition, int targe
         return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
     }
     case CONDITION_INTERVAL:
-        return condition.interval > 0 && computeIntervalState(condition.interval, condition.intervalLength, epochSeconds);
+        // Roadmap #361: epoch is 0 (or otherwise implausible) before the first successful NTP sync - evaluating against that computes nonsense (Jan 1 1970) rather than skipping until real time is known.
+        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && condition.interval > 0 && computeIntervalState(condition.interval, condition.intervalLength, epochSeconds);
     case CONDITION_SCHEDULE:
-        return computeScheduleState(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
+        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && computeScheduleState(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
     default:
         return false; // unrecognized type - ConfigParser already skips these at parse time, belt and suspenders
     }

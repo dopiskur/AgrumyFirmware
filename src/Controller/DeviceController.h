@@ -18,8 +18,11 @@ public:
 
     String getDateTime();
 
-    // NTP-derived wall-clock seconds, re-synced fresh every boot - ActuatorController's grid-aligned interval formula needs this instead of millis(), which resets on every reboot.
+    // NTP-derived wall-clock seconds, synced at boot and periodically thereafter via maybeResyncTime() - ActuatorController's grid-aligned interval formula needs this instead of millis(), which resets on every reboot (and overflows after ~49.7 days even without one).
     time_t getEpochSeconds();
+
+    // Roadmap #361: call every loop() cycle - resyncs NTP once ~24h has passed since the last successful sync (corrects crystal drift), or retries every ~60s if a sync has never succeeded yet (no internet at boot). Never lets a failed attempt clobber the last known-good time.
+    void maybeResyncTime();
 
     // Mosfet activation
     void powerRailPrimary(bool state);

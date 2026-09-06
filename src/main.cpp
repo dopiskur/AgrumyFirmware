@@ -260,6 +260,8 @@ void loop()
     lastWifiRetryMs = millis();
   }
 
+  device.maybeResyncTime();
+
   if (deviceConfig.batteryEnabled)
   {
     device.powerRailPrimary(true);
