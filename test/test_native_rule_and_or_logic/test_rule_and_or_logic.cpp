@@ -1,104 +1,185 @@
 #include <unity.h>
 #include "../../src/Logic/RelayLogic.h"
 
-// ops[0] is never read by foldConditions (nothing precedes the first result) - filled with 0 in
-// these tests to make that explicit rather than leaving it looking meaningful.
-const int UNUSED_FIRST_OP = 0;
-const int AND = 1;
-const int OR = 2;
-
 void setUp(void) {}
 void tearDown(void) {}
 
-void test_SingleCondition_ReturnsItUnchanged_True(void)
+// Three independently-controllable leaves (temperature/humidity/moisture, each a simple >=0 comparison)
+// so a test can set any true/false combination via MetricReadings without the leaves interfering.
+// desiredTrue documents intent at each call site only - actual truth is controlled by the paired readingsFor() call (>=0 or <0 for this metric).
+ConditionNode makeLeaf(int metric, bool /*desiredTrue*/)
 {
-    bool results[] = {true};
-    int ops[] = {UNUSED_FIRST_OP};
-    TEST_ASSERT_TRUE(foldConditions(results, ops, 1));
+    ConditionNode node;
+    node.type = NODE_COMPARISON;
+    node.metric = metric;
+    node.op = COMPARE_GTE;
+    node.value1 = 0;
+    return node;
 }
 
-void test_SingleCondition_ReturnsItUnchanged_False(void)
+MetricReadings readingsFor(bool a, bool b, bool c)
 {
-    bool results[] = {false};
-    int ops[] = {UNUSED_FIRST_OP};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 1));
+    MetricReadings r;
+    r.temperature = a ? 1 : -1;
+    r.humidity = b ? 1 : -1;
+    r.moisture = c ? 1 : -1;
+    return r;
 }
 
-void test_ZeroConditions_ReturnsFalse(void)
+bool evalGroup(ConditionNode nodes[], int rootIndex, const MetricReadings &readings)
 {
-    bool results[] = {true};
-    int ops[] = {UNUSED_FIRST_OP};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 0));
+    return evaluateNode(nodes, rootIndex, /*wasRuleTrue=*/false, readings, /*epochSeconds=*/1800000000, /*localWeekday=*/0, /*localSecondsOfDay=*/0);
 }
 
+void test_SingleComparison_ReturnsItUnchanged_True(void)
+{
+    ConditionNode nodes[1] = {makeLeaf(METRIC_TEMPERATURE, true)};
+    TEST_ASSERT_TRUE(evalGroup(nodes, 0, readingsFor(true, false, false)));
+}
+
+void test_SingleComparison_ReturnsItUnchanged_False(void)
+{
+    ConditionNode nodes[1] = {makeLeaf(METRIC_TEMPERATURE, false)};
+    TEST_ASSERT_FALSE(evalGroup(nodes, 0, readingsFor(false, false, false)));
+}
+
+void test_EmptyGroup_ReturnsFalse(void)
+{
+    ConditionNode nodes[1];
+    nodes[0].type = NODE_GROUP;
+    nodes[0].groupOperator = LOGICAL_AND;
+    nodes[0].childCount = 0;
+    TEST_ASSERT_FALSE(evalGroup(nodes, 0, readingsFor(true, true, true)));
+}
+
+// nodes[0]=A(temperature), nodes[1]=B(humidity), nodes[2]=group(A,B)
 void test_TwoConditions_And_BothTrue_IsTrue(void)
 {
-    bool results[] = {true, true};
-    int ops[] = {UNUSED_FIRST_OP, AND};
-    TEST_ASSERT_TRUE(foldConditions(results, ops, 2));
+    ConditionNode nodes[3];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, true);
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, true);
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_AND;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2;
+    TEST_ASSERT_TRUE(evalGroup(nodes, 2, readingsFor(true, true, false)));
 }
 
 void test_TwoConditions_And_OneFalse_IsFalse(void)
 {
-    bool results[] = {true, false};
-    int ops[] = {UNUSED_FIRST_OP, AND};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 2));
+    ConditionNode nodes[3];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, true);
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, true);
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_AND;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2;
+    TEST_ASSERT_FALSE(evalGroup(nodes, 2, readingsFor(true, false, false)));
 }
 
 void test_TwoConditions_Or_OneTrue_IsTrue(void)
 {
-    bool results[] = {false, true};
-    int ops[] = {UNUSED_FIRST_OP, OR};
-    TEST_ASSERT_TRUE(foldConditions(results, ops, 2));
+    ConditionNode nodes[3];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, false);
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, true);
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_OR;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2;
+    TEST_ASSERT_TRUE(evalGroup(nodes, 2, readingsFor(false, true, false)));
 }
 
 void test_TwoConditions_Or_BothFalse_IsFalse(void)
 {
-    bool results[] = {false, false};
-    int ops[] = {UNUSED_FIRST_OP, OR};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 2));
+    ConditionNode nodes[3];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, false);
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, false);
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_OR;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2;
+    TEST_ASSERT_FALSE(evalGroup(nodes, 2, readingsFor(false, false, false)));
 }
 
-// The whole point of "strict left-to-right, no precedence": (false AND true) OR true = true OR true = true -> TRUE.
-// A precedence-aware evaluator (AND binding tighter than OR) would instead compute false AND (true OR true) = false AND true = FALSE.
-// This is the regression lock distinguishing the two.
-void test_ThreeConditions_LeftToRight_NotOperatorPrecedence(void)
+// (A AND B) OR C - the whole point of nesting: mixed AND/OR now needs an explicit inner group,
+// unlike the old flat left-to-right fold where this was implicit. Regression lock against a
+// precedence-aware evaluator (which would instead compute something else for A=false,B=true,C=true).
+// nodes: 0=A,1=B,2=innerAND(A,B),3=C,4=outerOR(inner,C)
+void test_ThreeConditions_AndThenOr_NestedGroup(void)
 {
-    bool results[] = {false, true, true};
-    int ops[] = {UNUSED_FIRST_OP, AND, OR};
-    TEST_ASSERT_TRUE(foldConditions(results, ops, 3));
+    ConditionNode nodes[5];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, false); // A
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, true);      // B
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_AND;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2; // A AND B = false
+    nodes[3] = makeLeaf(METRIC_MOISTURE, true); // C = true
+    nodes[4].type = NODE_GROUP;
+    nodes[4].groupOperator = LOGICAL_OR;
+    nodes[4].childIndices[0] = 2;
+    nodes[4].childIndices[1] = 3;
+    nodes[4].childCount = 2; // (A AND B) OR C = false OR true = true
+    TEST_ASSERT_TRUE(evalGroup(nodes, 4, readingsFor(false, true, true)));
 }
 
-// (true AND false) OR false = false OR false = false - confirms the same left-to-right fold the
-// previous test exercises also correctly propagates a false through to the end when nothing
-// downstream rescues it.
-void test_ThreeConditions_LeftToRight_AndThenOr_AllFalseChain(void)
+// (A AND B) OR C with C also false - confirms the nested fold propagates false through when nothing rescues it.
+void test_ThreeConditions_AndThenOr_AllFalseChain(void)
 {
-    bool results[] = {true, false, false};
-    int ops[] = {UNUSED_FIRST_OP, AND, OR};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 3));
+    ConditionNode nodes[5];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, true);
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, false);
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_AND;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2; // A AND B = false
+    nodes[3] = makeLeaf(METRIC_MOISTURE, false); // C = false
+    nodes[4].type = NODE_GROUP;
+    nodes[4].groupOperator = LOGICAL_OR;
+    nodes[4].childIndices[0] = 2;
+    nodes[4].childIndices[1] = 3;
+    nodes[4].childCount = 2;
+    TEST_ASSERT_FALSE(evalGroup(nodes, 4, readingsFor(true, false, false)));
 }
 
-// (true OR false) AND false = true AND false = false - OR first, then AND, still strictly left-to-right.
-void test_ThreeConditions_LeftToRight_OrThenAnd(void)
+// (A OR B) AND C - OR nested inside AND, the other mixing order.
+void test_ThreeConditions_OrThenAnd_NestedGroup(void)
 {
-    bool results[] = {true, false, false};
-    int ops[] = {UNUSED_FIRST_OP, OR, AND};
-    TEST_ASSERT_FALSE(foldConditions(results, ops, 3));
+    ConditionNode nodes[5];
+    nodes[0] = makeLeaf(METRIC_TEMPERATURE, true);  // A
+    nodes[1] = makeLeaf(METRIC_HUMIDITY, false);     // B
+    nodes[2].type = NODE_GROUP;
+    nodes[2].groupOperator = LOGICAL_OR;
+    nodes[2].childIndices[0] = 0;
+    nodes[2].childIndices[1] = 1;
+    nodes[2].childCount = 2; // A OR B = true
+    nodes[3] = makeLeaf(METRIC_MOISTURE, false); // C = false
+    nodes[4].type = NODE_GROUP;
+    nodes[4].groupOperator = LOGICAL_AND;
+    nodes[4].childIndices[0] = 2;
+    nodes[4].childIndices[1] = 3;
+    nodes[4].childCount = 2; // (A OR B) AND C = true AND false = false
+    TEST_ASSERT_FALSE(evalGroup(nodes, 4, readingsFor(true, false, false)));
 }
 
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
-    RUN_TEST(test_SingleCondition_ReturnsItUnchanged_True);
-    RUN_TEST(test_SingleCondition_ReturnsItUnchanged_False);
-    RUN_TEST(test_ZeroConditions_ReturnsFalse);
+    RUN_TEST(test_SingleComparison_ReturnsItUnchanged_True);
+    RUN_TEST(test_SingleComparison_ReturnsItUnchanged_False);
+    RUN_TEST(test_EmptyGroup_ReturnsFalse);
     RUN_TEST(test_TwoConditions_And_BothTrue_IsTrue);
     RUN_TEST(test_TwoConditions_And_OneFalse_IsFalse);
     RUN_TEST(test_TwoConditions_Or_OneTrue_IsTrue);
     RUN_TEST(test_TwoConditions_Or_BothFalse_IsFalse);
-    RUN_TEST(test_ThreeConditions_LeftToRight_NotOperatorPrecedence);
-    RUN_TEST(test_ThreeConditions_LeftToRight_AndThenOr_AllFalseChain);
-    RUN_TEST(test_ThreeConditions_LeftToRight_OrThenAnd);
+    RUN_TEST(test_ThreeConditions_AndThenOr_NestedGroup);
+    RUN_TEST(test_ThreeConditions_AndThenOr_AllFalseChain);
+    RUN_TEST(test_ThreeConditions_OrThenAnd_NestedGroup);
     return UNITY_END();
 }

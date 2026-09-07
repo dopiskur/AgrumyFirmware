@@ -55,13 +55,17 @@ private:
     // Shared by initController()'s EmergencyStop/relayEnabled branch and forceAllRelaysOff().
     void driveEveryAssignedRelayOff() const;
 
-    // Roadmap #212. Evaluates ONE condition - the per-conditionType dispatch (used to be evaluateRule's whole body, back when a rule was exactly one condition). targetFunction is the owning Rule's, passed separately since Condition itself no longer carries it.
-    bool evaluateCondition(const Condition &condition, int targetFunction, SensorData sensorData, time_t epochSeconds,
-                            int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const;
-
-    // Folds a Rule's conditions[] strictly left-to-right by their operatorBefore - "(A op B) op C", never nested/parenthesized (roadmap #212). localWeekday (0=Sunday..6=Saturday) and localSecondsOfDay (0..86399) are computed ONCE per initController() tick and passed through rather than re-derived per rule. isCurrentlyOn is the target function's CURRENT physical pin state, needed only by Threshold's hysteresis math.
+    // Roadmap #396(4). Evaluates a Rule's whole ConditionNode tree (RelayLogic::evaluateNode) - the
+    // ONE exception is Heating's bounded hold-through-NaN-temperature safety net, applied here (not
+    // inside the pure evaluateNode) since it needs Serial/event-reporting and heatingSensorStaleSinceEpoch
+    // state. localWeekday (0=Sunday..6=Saturday) and localSecondsOfDay (0..86399) are computed ONCE per
+    // initController() tick and passed through rather than re-derived per rule. isCurrentlyOn is the
+    // target function's CURRENT physical pin state, needed only by a GT/LT ComparisonNode's hysteresis math.
     bool evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
                        int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const;
+
+    // Collects every RAW metric a ComparisonNode might read from sensorData into RelayLogic's plain (Arduino-independent) MetricReadings shape - DERIVED metrics (VPD/DewPoint/DewPointSpread) are computed by RelayLogic::readMetric itself, not here.
+    static MetricReadings collectMetricReadings(const SensorData &sensorData);
 
     // The LAST word for a WaterPump-assigned physical relay slot, applied right after this function's rules are OR'd and written for this tick. slotIndex (0..MAX_RELAY_SLOTS-1) is the physical relay index, not the discovery order collectPinsForFunction gives - so each slot's history stays independent even if several relays share the WaterPump function. waterLevel is this tick's raw reading, checked against the zone's tank calibration/minLevel regardless of which mode (Threshold/Interval/Schedule/Manual) turned the pump on.
     void applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds, double waterLevel);

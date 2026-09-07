@@ -187,52 +187,8 @@ struct ConfigSensor
     int sensorWind;
 };
 
-enum ConditionType
-{
-    CONDITION_THRESHOLD = 1,
-    CONDITION_INTERVAL = 2,
-    CONDITION_SCHEDULE = 3,
-};
+#include "../Logic/ConditionTree.h"
 
-// Roadmap #212. Operator joining a condition to the PREVIOUS one in its Rule's conditions[] - unused (0) at index 0.
-enum LogicalOperator
-{
-    LOGICAL_AND = 1,
-    LOGICAL_OR = 2,
-};
-
-// Flat, tagged-union style: only the fields matching `type` are meaningful (not a real C++ union).
-struct Condition
-{
-    int type = 0;           // ConditionType raw value
-    int operatorBefore = 0; // LogicalOperator raw value, 0/unused for this Rule's first condition
-
-    // Metric/direction are implicit in the owning Rule's targetFunction (Ventilation=humidity/above, Light=light/below, Heating=temperature/below, WaterPump=waterLevel/below).
-    double threshold = 0;
-    double hysteresis = 0;
-
-    // On for intervalLength seconds out of every interval-second period, grid-aligned to epoch.
-    int interval = 0;
-    int intervalLength = 0;
-
-    // daysOfWeek: 7-bit mask, bit0=Sunday..bit6=Saturday. start/duration: seconds since local midnight; a window may not cross midnight.
-    int daysOfWeek = 0;
-    int start = 0;
-    int duration = 0;
-};
-
-// Roadmap #212. Beyond this cap, ConfigParser silently drops extra conditions within one rule (server enforces a matching cap) - independent of MAX_RULES below.
-static const int MAX_CONDITIONS_PER_RULE = 8;
-
-// One automation rule: targetFunction plus a flat, left-to-right AND/OR fold of conditionCount
-// conditions (roadmap #212) - "(A op B) op C", never nested/parenthesized (ActuatorController::evaluateRule).
-// Several Rules for the same targetFunction still OR together on top of this, unchanged since before #212.
-struct Rule
-{
-    int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump
-    Condition conditions[MAX_CONDITIONS_PER_RULE];
-    int conditionCount = 0;
-};
 
 // Beyond this cap, ConfigParser silently drops extra rules (ArduinoJson has no dynamic growth on-device).
 static const int MAX_RULES = 32;

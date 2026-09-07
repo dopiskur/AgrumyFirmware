@@ -97,16 +97,135 @@ bool waterPumpBlockedByLowTank(double waterLevel, int rawEmpty, int rawFull, dou
     return (fraction * 100.0) < minLevelPercent;
 }
 
-bool foldConditions(const bool results[], const int ops[], int count)
+namespace
 {
-    if (count <= 0)
+    // Magnus formula, same constants api.Utils.DewPointCalculator uses server-side.
+    double dewPoint(double temperatureC, double humidityPercent)
     {
+        if (std::isnan(temperatureC) || std::isnan(humidityPercent) || humidityPercent <= 0)
+        {
+            return NAN;
+        }
+        const double a = 17.62, b = 243.12;
+        double gamma = a * temperatureC / (b + temperatureC) + log(humidityPercent / 100.0);
+        return b * gamma / (a - gamma);
+    }
+
+    // Tetens formula, same constants api.Utils.VpdCalculator uses server-side.
+    double vpd(double temperatureC, double humidityPercent)
+    {
+        if (std::isnan(temperatureC) || std::isnan(humidityPercent))
+        {
+            return NAN;
+        }
+        double saturationVaporPressureKPa = 0.6108 * exp(17.27 * temperatureC / (temperatureC + 237.3));
+        return saturationVaporPressureKPa * (1 - humidityPercent / 100.0);
+    }
+}
+
+double readMetric(int metric, const MetricReadings &readings)
+{
+    switch (metric)
+    {
+    case METRIC_TEMPERATURE:
+        return readings.temperature;
+    case METRIC_SOIL_TEMPERATURE:
+        return readings.soilTemperature;
+    case METRIC_HUMIDITY:
+        return readings.humidity;
+    case METRIC_VPD:
+        return vpd(readings.temperature, readings.humidity);
+    case METRIC_DEW_POINT:
+        return dewPoint(readings.temperature, readings.humidity);
+    case METRIC_DEW_POINT_SPREAD:
+    {
+        double dp = dewPoint(readings.temperature, readings.humidity);
+        return std::isnan(dp) ? NAN : readings.temperature - dp;
+    }
+    case METRIC_MOISTURE:
+        return readings.moisture;
+    case METRIC_LIGHT:
+        return readings.light;
+    case METRIC_CO2:
+        return readings.co2;
+    case METRIC_TVOC:
+        return readings.tvoc;
+    case METRIC_BAROMETER:
+        return readings.barometer;
+    case METRIC_LIQUID_PH:
+        return readings.liquidPH;
+    case METRIC_RAIN_LEVEL:
+        return readings.rainLevel;
+    case METRIC_WATER_LEVEL:
+        return readings.waterLevel;
+    case METRIC_WIND:
+        return readings.wind;
+    default:
+        return NAN;
+    }
+}
+
+namespace
+{
+    bool evaluateComparison(const ConditionNode &node, bool wasRuleTrue, const MetricReadings &readings)
+    {
+        double reading = readMetric(node.metric, readings);
+        if (std::isnan(reading))
+        {
+            return false;
+        }
+        switch (node.op)
+        {
+        case COMPARE_GT:
+            return computeThresholdState(wasRuleTrue, reading, node.value1, node.hysteresis, /*turnsOnAboveThreshold=*/true);
+        case COMPARE_LT:
+            return computeThresholdState(wasRuleTrue, reading, node.value1, node.hysteresis, /*turnsOnAboveThreshold=*/false);
+        case COMPARE_GTE:
+            return reading >= node.value1;
+        case COMPARE_LTE:
+            return reading <= node.value1;
+        case COMPARE_EQ:
+            return reading == node.value1;
+        case COMPARE_BETWEEN:
+        {
+            double lo = node.value1 < node.value2 ? node.value1 : node.value2;
+            double hi = node.value1 < node.value2 ? node.value2 : node.value1;
+            return reading >= lo && reading <= hi;
+        }
+        default:
+            return false;
+        }
+    }
+}
+
+bool evaluateNode(const ConditionNode nodes[], int nodeIndex, bool wasRuleTrue, const MetricReadings &readings,
+                   time_t epochSeconds, int localWeekday, int localSecondsOfDay)
+{
+    const ConditionNode &node = nodes[nodeIndex];
+    switch (node.type)
+    {
+    case NODE_COMPARISON:
+        return evaluateComparison(node, wasRuleTrue, readings);
+    case NODE_INTERVAL:
+        // epoch is 0 (or otherwise implausible) before the first successful NTP sync - evaluating against that computes nonsense (Jan 1 1970) rather than skipping until real time is known.
+        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && node.interval > 0 && computeIntervalState(node.interval, node.intervalLength, epochSeconds);
+    case NODE_SCHEDULE:
+        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && computeScheduleState(node.daysOfWeek, node.start, node.duration, localWeekday, localSecondsOfDay);
+    case NODE_GROUP:
+    {
+        if (node.childCount <= 0)
+        {
+            return false;
+        }
+        bool result = evaluateNode(nodes, node.childIndices[0], wasRuleTrue, readings, epochSeconds, localWeekday, localSecondsOfDay);
+        for (int i = 1; i < node.childCount; i++)
+        {
+            bool next = evaluateNode(nodes, node.childIndices[i], wasRuleTrue, readings, epochSeconds, localWeekday, localSecondsOfDay);
+            result = (node.groupOperator == LOGICAL_AND) ? (result && next) : (result || next);
+        }
+        return result;
+    }
+    default:
         return false;
     }
-    bool result = results[0];
-    for (int i = 1; i < count; i++)
-    {
-        result = (ops[i] == 1) ? (result && results[i]) : (result || results[i]);
-    }
-    return result;
 }

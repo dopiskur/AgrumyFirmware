@@ -38,7 +38,35 @@ int ActuatorController::collectPinsForFunction(RelayFunctionType relayFunction, 
     return count;
 }
 
-// Threshold conditions are ignored - they're re-evaluated every poll regardless of timing, no boundary to sleep toward. 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
+// Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (roadmap #396(4) made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
+namespace
+{
+    void collectWakeBoundary(const ConditionNode nodes[], int nodeIndex, int localWeekday, int localSecondsOfDay, time_t epochSeconds, int &best)
+    {
+        const ConditionNode &node = nodes[nodeIndex];
+        int candidate = -1;
+        if (node.type == NODE_SCHEDULE)
+        {
+            candidate = secondsUntilScheduleBoundary(node.daysOfWeek, node.start, node.duration, localWeekday, localSecondsOfDay);
+        }
+        else if (node.type == NODE_INTERVAL)
+        {
+            candidate = secondsUntilIntervalBoundary(node.interval, node.intervalLength, epochSeconds);
+        }
+        else if (node.type == NODE_GROUP)
+        {
+            for (int i = 0; i < node.childCount; i++)
+            {
+                collectWakeBoundary(nodes, node.childIndices[i], localWeekday, localSecondsOfDay, epochSeconds, best);
+            }
+        }
+        if (candidate >= 0 && candidate < best)
+        {
+            best = candidate;
+        }
+    }
+}
+
 int ActuatorController::computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const
 {
     time_t localEpoch = epochSeconds + deviceConfig.utcOffsetSeconds;
@@ -46,113 +74,71 @@ int ActuatorController::computeNextWakeSeconds(time_t epochSeconds, int defaultS
     int localWeekday = localTm->tm_wday;
     int localSecondsOfDay = localTm->tm_hour * 3600 + localTm->tm_min * 60 + localTm->tm_sec;
 
-    // Roadmap #212: a boundary can come from ANY condition inside ANY rule, regardless of its position in that rule's AND/OR fold - the fold's boolean RESULT doesn't matter here, only "does this condition's own state flip soon".
     int best = defaultSleepSeconds;
     for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
     {
         const Rule &rule = deviceConfig.configController.rules[i];
-        for (int j = 0; j < rule.conditionCount; j++)
+        if (rule.nodeCount > 0)
         {
-            const Condition &condition = rule.conditions[j];
-            int candidate = -1;
-            if (condition.type == CONDITION_SCHEDULE)
-            {
-                candidate = secondsUntilScheduleBoundary(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
-            }
-            else if (condition.type == CONDITION_INTERVAL)
-            {
-                candidate = secondsUntilIntervalBoundary(condition.interval, condition.intervalLength, epochSeconds);
-            }
-            if (candidate >= 0 && candidate < best)
-            {
-                best = candidate;
-            }
+            collectWakeBoundary(rule.nodes, rule.rootIndex, localWeekday, localSecondsOfDay, epochSeconds, best);
         }
     }
     return clampToSleepFloor(best, MIN_SLEEP_SECONDS);
 }
 
-// Ventilation reacts to humidity and is the only function whose "on" direction is inverted (exhausting excess humidity, not replenishing a deficit); Light/Heating/WaterPump all turn on BELOW their threshold and off above threshold+hysteresis. isCurrentlyOn is needed only for this dead-zone math - interval/schedule ignore it entirely.
-bool ActuatorController::evaluateCondition(const Condition &condition, int targetFunction, SensorData sensorData, time_t epochSeconds,
-                                            int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
+MetricReadings ActuatorController::collectMetricReadings(const SensorData &sensorData)
 {
-    switch (condition.type)
-    {
-    case CONDITION_THRESHOLD:
-    {
-        double reading;
-        bool turnsOnAboveThreshold;
-        switch ((RelayFunctionType)targetFunction)
-        {
-        case RelayFunctionType::Ventilation:
-            reading = sensorData.humidity;
-            turnsOnAboveThreshold = true;
-            break;
-        case RelayFunctionType::Light:
-            reading = sensorData.light;
-            turnsOnAboveThreshold = false;
-            break;
-        case RelayFunctionType::Heating:
-            reading = sensorData.temperature;
-            turnsOnAboveThreshold = false;
-            break;
-        case RelayFunctionType::WaterPump:
-            reading = sensorData.waterLevel;
-            turnsOnAboveThreshold = false;
-            break;
-        default:
-            return false; // rule somehow targets no function - never on
-        }
-        // NAN means no reading this cycle (sensor absent/disabled/failed) - must not be evaluated as a phantom threshold-crossing value (e.g. Heating turning on for a false 0C).
-        if (isnan(reading))
-        {
-            reportSensorStale("Function " + String(targetFunction) + " threshold condition has no reading this cycle (sensor absent/disabled/failed)");
-            // fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed, but only up to MAX_HEATING_SENSOR_STALE_SECONDS - a sensor that never recovers must not leave a heater stuck on indefinitely.
-            if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
-            {
-                if (heatingSensorStaleSinceEpoch == 0)
-                {
-                    heatingSensorStaleSinceEpoch = epochSeconds;
-                }
-                if (runTimeCeilingHit(epochSeconds, heatingSensorStaleSinceEpoch, MAX_HEATING_SENSOR_STALE_SECONDS))
-                {
-                    reportSensorStale("Heating forced off - temperature sensor has been stale for over " + String(MAX_HEATING_SENSOR_STALE_SECONDS) + "s");
-                    return false;
-                }
-                return isCurrentlyOn;
-            }
-            return false;
-        }
-        if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
-        {
-            heatingSensorStaleSinceEpoch = 0;
-        }
-        return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
-    }
-    case CONDITION_INTERVAL:
-        // epoch is 0 (or otherwise implausible) before the first successful NTP sync - evaluating against that computes nonsense (Jan 1 1970) rather than skipping until real time is known.
-        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && condition.interval > 0 && computeIntervalState(condition.interval, condition.intervalLength, epochSeconds);
-    case CONDITION_SCHEDULE:
-        return epochSeconds >= MIN_PLAUSIBLE_EPOCH && computeScheduleState(condition.daysOfWeek, condition.start, condition.duration, localWeekday, localSecondsOfDay);
-    default:
-        return false; // unrecognized type - ConfigParser already skips these at parse time, belt and suspenders
-    }
+    MetricReadings readings;
+    readings.temperature = sensorData.temperature;
+    readings.soilTemperature = sensorData.temperatureSoil;
+    readings.humidity = sensorData.humidity;
+    readings.moisture = sensorData.moisture;
+    readings.light = sensorData.light;
+    readings.co2 = sensorData.co2;
+    readings.tvoc = sensorData.tvoc;
+    readings.barometer = sensorData.barometer;
+    readings.liquidPH = sensorData.liquidPH;
+    readings.rainLevel = sensorData.rainLevel;
+    readings.waterLevel = sensorData.waterLevel;
+    readings.wind = sensorData.wind;
+    return readings;
 }
 
-// Roadmap #212. Evaluates every condition, then hands the results to RelayLogic's foldConditions for
-// the actual strict left-to-right AND/OR combine - array-building split out here so the fold logic
-// itself stays a pure, natively-testable function independent of Arduino/SensorData/this class.
+// Roadmap #396(4). Heating's bounded hold-through-NaN-temperature safety net is applied HERE, once per
+// rule, before handing off to RelayLogic::evaluateNode's pure recursive tree-walk - staying off risks
+// freezing while the sensor is briefly down, so a Heating-targeting rule holds its last state (not
+// fail-off, unlike every other function) up to MAX_HEATING_SENSOR_STALE_SECONDS, then forces off. Every
+// other NaN-metric case (any function, any node) is handled generically inside evaluateNode itself
+// (fails that one comparison, same as before #396).
 bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
                                        int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
 {
-    bool results[MAX_CONDITIONS_PER_RULE];
-    int ops[MAX_CONDITIONS_PER_RULE];
-    for (int i = 0; i < rule.conditionCount; i++)
+    if ((RelayFunctionType)rule.targetFunction == RelayFunctionType::Heating && isnan(sensorData.temperature))
     {
-        results[i] = evaluateCondition(rule.conditions[i], rule.targetFunction, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn);
-        ops[i] = rule.conditions[i].operatorBefore;
+        if (heatingSensorStaleSinceEpoch == 0)
+        {
+            heatingSensorStaleSinceEpoch = epochSeconds;
+        }
+        if (runTimeCeilingHit(epochSeconds, heatingSensorStaleSinceEpoch, MAX_HEATING_SENSOR_STALE_SECONDS))
+        {
+            reportSensorStale("Heating forced off - temperature sensor has been stale for over " + String(MAX_HEATING_SENSOR_STALE_SECONDS) + "s");
+            return false;
+        }
+        reportSensorStale("Heating rule has no temperature reading this cycle (sensor absent/disabled/failed) - holding last state");
+        return isCurrentlyOn;
     }
-    return foldConditions(results, ops, rule.conditionCount);
+    if ((RelayFunctionType)rule.targetFunction == RelayFunctionType::Heating)
+    {
+        heatingSensorStaleSinceEpoch = 0;
+    }
+
+    if (rule.nodeCount == 0)
+    {
+        return false; // ConfigParser rejects an empty tree at parse time - belt and suspenders.
+    }
+    // Epoch plausibility (before the first successful NTP sync) only matters to Interval/Schedule nodes - evaluateNode itself gates those, a Comparison-only tree is unaffected by clock state, same distinction as before #396.
+    MetricReadings readings = collectMetricReadings(sensorData);
+    return evaluateNode(rule.nodes, rule.rootIndex, isCurrentlyOn, readings, epochSeconds, localWeekday, localSecondsOfDay);
 }
 
 // Order matters: cooldown is evaluated against the OLD offSinceEpoch BEFORE anything below touches onSinceEpoch/offSinceEpoch, so an ON request arriving mid-cooldown can never reset its own clock into a permanent lockout.
