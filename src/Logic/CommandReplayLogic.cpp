@@ -1,11 +1,9 @@
 #include "CommandReplayLogic.h"
+#include "EpochPlausibility.h"
 #include <cstdio>
 
 namespace
 {
-    // Mirrors ActuatorController.cpp's MIN_PLAUSIBLE_EPOCH, duplicated (not #included) to keep this file Arduino-independent for native tests.
-    const long MIN_PLAUSIBLE_EPOCH = 1700000000;
-
     // Howard Hinnant's days-from-civil (proleptic Gregorian, UTC) - mirrors HttpDateLogic.cpp's own copy, duplicated for the same "no mktime/timegm timezone dependency" reason.
     long daysFromCivil(int y, int m, int d)
     {

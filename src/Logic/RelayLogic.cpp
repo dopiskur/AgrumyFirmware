@@ -1,8 +1,6 @@
 #include "RelayLogic.h"
+#include "EpochPlausibility.h"
 #include <cmath>
-
-// 2023-11-14 UTC, safely before any real deployment - mirrors ActuatorController.cpp's MIN_PLAUSIBLE_EPOCH, duplicated (not #included) to keep this file Arduino-independent for native tests.
-static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
 
 bool computeIntervalState(int interval, int intervalLength, time_t epochSeconds)
 {

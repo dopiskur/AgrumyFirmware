@@ -6,9 +6,7 @@
 #include "DeviceController.h"
 #include "ServiceController.h"
 #include "ActuatorController.h"
-
-// 2023-11-14 UTC, safely before any real deployment - distinguishes a genuine epoch from the 0 (or near-0) value NTPClient reports before its first successful sync.
-static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
+#include "../Logic/EpochPlausibility.h"
 
 // Heating holds its last state across a NaN reading (staying off risks freezing while the sensor is briefly down) but not forever - past this many seconds of continuous staleness the risk flips (a genuinely dead sensor with the heater stuck on is its own hazard), so it forces off instead.
 static const int MAX_HEATING_SENSOR_STALE_SECONDS = 30 * 60;
