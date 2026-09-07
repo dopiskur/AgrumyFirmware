@@ -8,6 +8,7 @@
 #include "MqttController.h"
 #include "DeviceController.h"
 #include "ServiceController.h"
+#include "Logic/CommandReplayLogic.h"
 
 // Root CA bundle embedded via platformio.ini board_build.embed_files - same bundle ServiceController uses for HTTPS.
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
@@ -26,6 +27,9 @@ namespace
     WiFiClient persistentPlainClient;
     PubSubClient persistentClient;
     bool persistentClientInitialized = false;
+
+    // In-RAM only, resets on reboot - closes the realistic same-session replay window (a captured, still-validly-signed message republished later this same uptime), not a persisted, cross-reboot-safe ledger.
+    int lastProcessedCommandId = 0;
 
     // 32 raw HMAC-SHA256 bytes -> 64 lowercase hex chars + NUL, same convention as OtaController's sha256ToHex.
     void hmacSha256Hex(const String &key, const String &message, char out[65])
@@ -70,6 +74,14 @@ namespace
             Serial.println("[Mqtt] Command message signature missing or invalid - dropped");
             return;
         }
+
+        // A valid signature alone doesn't stop a previously-captured message from being republished later - reject a stale idDeviceCommand or an already-expired expiresAt.
+        if (commandIsReplayed(idDeviceCommand, lastProcessedCommandId, isoUtcToEpochSeconds(expiresAt.c_str()), (long)device.getEpochSeconds()))
+        {
+            Serial.println("[Mqtt] Command message rejected as a replay (stale idDeviceCommand or expired expiresAt)");
+            return;
+        }
+        lastProcessedCommandId = idDeviceCommand;
 
         if (actionType == COMMAND_FORCE_CONFIG_SYNC)
         {
