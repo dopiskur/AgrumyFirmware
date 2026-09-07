@@ -323,6 +323,22 @@ void ActuatorController::forceAllRelaysOff() const
     driveEveryAssignedRelayOff();
 }
 
+bool ActuatorController::isRelayOn(RelayFunctionType relayFunction) const
+{
+    int pins[MAX_RELAY_SLOTS];
+    int pinCount = collectPinsForFunction(relayFunction, pins);
+    if (pinCount == 0)
+    {
+        return false;
+    }
+    int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
+    int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
+    int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
+    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
+    relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
+    return relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
+}
+
 void ActuatorController::initController(SensorData sensorData, time_t epochSeconds)
 {
     // Routes through RelayIO so an I2C-expander kit (KC868-A6) works the same as a direct-GPIO one.

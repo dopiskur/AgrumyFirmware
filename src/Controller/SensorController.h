@@ -63,6 +63,9 @@ public:
     void buildSensorData(DeviceConfig deviceConfig);
     void buildSensorDataPayload();
     void pushSensorData(JsonDocument payload);
+
+    // Roadmap #133's local display reads the last cycle's readings through this instead of duplicating buildSensorData()'s own storage.
+    const SensorData &getSensorData() const { return sensorData; }
 };
 
 // The one SensorController instance, defined in main.cpp.

@@ -46,6 +46,9 @@ public:
     // >0 right after apiConfig() returned a 429 ("Wait" - see RelayRateLimitedException server-side): main.cpp's loop() sleeps this many seconds instead of the normal cycle before polling again. Always reset to 0 at the top of apiConfig().
     int waitSeconds = 0;
 
+    // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. Roadmap #133's local display "last sync" page reads this; not set on a 429/error response.
+    time_t lastConfigSyncEpoch = 0;
+
 private:
     // Queried on a 401 instead of ever self-wiping from a bare failure count - apiId alone (no apiKey/session) so this reaches a device whose apiKey itself is what's broken.
     bool isHardResetPending(ServiceRequest serviceRequest, const String &apiId);

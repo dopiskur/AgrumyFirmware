@@ -45,6 +45,9 @@ public:
     // Forces every assigned relay off without reading sensors or evaluating rules - for a cycle where initController() itself is being skipped entirely (disabled device, server backoff wait).
     void forceAllRelaysOff() const;
 
+    // Read-only, no relay writes - roadmap #133's local display page. False for an unassigned function, same as it being physically off.
+    bool isRelayOn(RelayFunctionType relayFunction) const;
+
 private:
     // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
     int collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const;

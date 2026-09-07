@@ -598,6 +598,10 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         Serial.print("[Service] Error accessing service point: ");
         Serial.println(serviceData.eventlog.errorCode);
     }
+    else
+    {
+        lastConfigSyncEpoch = device.getEpochSeconds();
+    }
 
     // A prolonged server/network outage must not, by itself, reboot the device (same "keep running on local rules" philosophy as the auth-failure fix above) - a raw failed-HTTP-cycle count says nothing about the device's own health. Reboot only on real memory pressure, which a reboot actually fixes.
     const uint32_t LOW_HEAP_REBOOT_THRESHOLD_BYTES = 20000;

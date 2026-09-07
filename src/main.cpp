@@ -115,6 +115,11 @@ void loop()
 #include "Controller/LoRaGatewayRelayController.h"
 #endif
 
+// Roadmap #133 - KC868-A6's dedicated OLED slot only (see platformio.ini's per-env build_src_filter).
+#ifdef AGRUMY_KIT_KC868_A6
+#include "Controller/DisplayController.h"
+#endif
+
 // Injected by tools/firmware_version.py (git tag / FIRMWARE_VERSION env var); the fallback only covers a build that skipped extra_scripts.
 #ifndef FIRMWARE_VERSION
 #define FIRMWARE_VERSION "0.0.0-dev"
@@ -150,6 +155,10 @@ LoRaGatewayRelayController loRaGatewayRelay;
 // Edge-triggered: begin() is attempted once per "enabled" streak, not every loop() cycle - re-attempted from scratch if the admin toggles it off then on again (e.g. after fixing wiring).
 static bool loRaGatewayAttempted = false;
 static bool loRaGatewayReady = false;
+#endif
+
+#ifdef AGRUMY_KIT_KC868_A6
+DisplayController display;
 #endif
 
 
@@ -248,6 +257,13 @@ void setup()
   device.setupController(); // initialize time
   mqtt.begin(device);        // loads mqttConfig.json - no-op if MQTT was never configured
 
+#ifdef AGRUMY_KIT_KC868_A6
+  if (!display.begin(deviceConfig.configPin))
+  {
+    Serial.println("[Main] OLED not detected - display disabled for this boot");
+  }
+#endif
+
   // Arm the watchdog only now that setup (incl. the blocking WiFi portal/registration path) is done - those legitimately take longer than one loop cycle. esp_task_wdt_init() is a no-op if the WDT (arduino-esp32's own 5s default) is already initialized, so tear it down first.
   esp_task_wdt_deinit();
   esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true); // true: panic-handler reboot on timeout
@@ -312,6 +328,10 @@ void loop()
     controller.forceAllRelaysOff();
   }
 
+#ifdef AGRUMY_KIT_KC868_A6
+  display.update(deviceConfig, sensor.getSensorData(), controller, service.lastConfigSyncEpoch, device.getEpochSeconds());
+#endif
+
   if (deviceConfig.batteryEnabled)
   {
     device.powerRailPrimary(false);
@@ -352,14 +372,23 @@ void loop()
   // Bounded idle wait, not work that can hang - keep petting the watchdog through it in steps shorter than the timeout, otherwise a server-set sleepSeconds longer than WDT_TIMEOUT_SECONDS looks like a stall.
   uint32_t sleepRemaining = cycleSeconds * 1000UL;
   const uint32_t sleepStep = WDT_TIMEOUT_SECONDS * 1000UL / 3;
+#ifdef AGRUMY_KIT_KC868_A6
+  // Finer than sleepStep so the OLED's rotating pages (DisplayController::PAGE_MS) actually advance during a long idle wait, instead of only once per multi-second WDT chunk.
+  const uint32_t chunkStep = sleepStep < 1000UL ? sleepStep : 1000UL;
+#else
+  const uint32_t chunkStep = sleepStep;
+#endif
   // No-op unless mqttConfig.json opted into persistentCommandChannel (roadmap #146) - this is the
   // only place in the WiFi profile a device stays powered/idle long enough for it to be worthwhile.
   mqtt.beginPersistentIfEnabled(deviceConfig);
   while (sleepRemaining > 0)
   {
-    uint32_t chunk = sleepRemaining < sleepStep ? sleepRemaining : sleepStep;
+    uint32_t chunk = sleepRemaining < chunkStep ? sleepRemaining : chunkStep;
     delay(chunk);
     mqtt.poll(); // pumps the persistent client's receive loop so a pushed command isn't missed
+#ifdef AGRUMY_KIT_KC868_A6
+    display.tick();
+#endif
     esp_task_wdt_reset();
     sleepRemaining -= chunk;
   }

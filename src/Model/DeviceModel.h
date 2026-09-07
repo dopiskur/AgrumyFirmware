@@ -125,6 +125,13 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int RELAY_I2C_SCL=0;
 #endif
 
+    // Roadmap #133 - this kit's dedicated OLED slot, shares the RELAY_I2C_SDA/SCL bus above (different address, same wires). 0 means "no local display" - Controller/DisplayController.cpp isn't even compiled in for other kits (see platformio.ini build_src_filter).
+#if defined(AGRUMY_KIT_KC868_A6)
+    int DISPLAY_I2C_ADDRESS=0x3C;
+#else
+    int DISPLAY_I2C_ADDRESS=0;
+#endif
+
     // Direct-GPIO kits only (RELAY_I2C_ADDRESS==0) - a PCF8574-expander kit like KC868-A6 already drives its relays active-low by the expander's own wiring convention (see RelayIO.cpp), unrelated to this flag. false on every kit below since none has been field-verified as active-low yet; this only adds the lever, it changes no kit's current behavior.
     bool RELAY_ACTIVE_LOW=false;
 };
