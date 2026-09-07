@@ -37,6 +37,27 @@ int ActuatorController::collectPinsForFunction(RelayFunctionType relayFunction, 
     return count;
 }
 
+// Roadmap #231 - only slots the server actually assigned arrive in deviceConfig.configController.pwmSlots[0..pwmSlotCount); a slot whose board has no real PWM pin at that position (PWM_PINS[slot-1] == -1) is silently skipped, same convention as collectPinsForFunction's relay-pin check above.
+int ActuatorController::collectPwmSlotsForFunction(RelayFunctionType relayFunction, int pins[MAX_PWM_SLOTS], int intensities[MAX_PWM_SLOTS]) const
+{
+    int count = 0;
+    for (int i = 0; i < deviceConfig.configController.pwmSlotCount; i++)
+    {
+        const PwmSlot &pwmSlot = deviceConfig.configController.pwmSlots[i];
+        if (pwmSlot.relayFunction == (int)relayFunction && pwmSlot.slot >= 1 && pwmSlot.slot <= MAX_PWM_SLOTS)
+        {
+            int pin = deviceConfig.configPin.PWM_PINS[pwmSlot.slot - 1];
+            if (pin >= 0)
+            {
+                pins[count] = pin;
+                intensities[count] = pwmSlot.intensityPercent;
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
 // Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (roadmap #396(4) made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
 namespace
 {
@@ -271,7 +292,7 @@ bool ActuatorController::consumeSensorStaleEvent(String &outMessage)
     return true;
 }
 
-// Forces every currently-assigned relay slot off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
+// Forces every currently-assigned relay slot (and, roadmap #231, PWM slot) off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
 void ActuatorController::driveEveryAssignedRelayOff() const
 {
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
@@ -299,6 +320,23 @@ void ActuatorController::driveEveryAssignedRelayOff() const
     if (relayI2CFaulted())
     {
         reportHardwareFault("I2C write to relay expander failed while forcing relays off - physical relay state may not match commanded state");
+    }
+
+    // EmergencyStop/relayEnabled=false must silence PWM outputs too, not just relays - a proportional signal left at its last duty cycle would keep driving a fan/light at speed while the admin believes everything is off.
+    for (int i = 0; i < deviceConfig.configController.pwmSlotCount; i++)
+    {
+        const PwmSlot &pwmSlot = deviceConfig.configController.pwmSlots[i];
+        if (pwmSlot.slot < 1 || pwmSlot.slot > MAX_PWM_SLOTS)
+        {
+            continue;
+        }
+        int pin = deviceConfig.configPin.PWM_PINS[pwmSlot.slot - 1];
+        if (pin < 0)
+        {
+            continue;
+        }
+        pwmPinMode(pin);
+        pwmWrite(pin, 0);
     }
 }
 
@@ -421,6 +459,16 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         {
             relayPinMode(pins[i], i2cAddr, i2cSda, i2cScl);
             relayWrite(pins[i], shouldBeOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        }
+
+        // Roadmap #231 - mirrors this SAME function's shouldBeOn decision onto any dedicated PWM output assigned to it, as a proportional signal rather than an independent on/off decision (see PwmSlot's own remarks). Inert on every board today - PWM_PINS ships all-UNASSIGNED until a real schematic confirms free GPIOs.
+        int pwmPins[MAX_PWM_SLOTS];
+        int pwmIntensities[MAX_PWM_SLOTS];
+        int pwmCount = collectPwmSlotsForFunction(function, pwmPins, pwmIntensities);
+        for (int i = 0; i < pwmCount; i++)
+        {
+            pwmPinMode(pwmPins[i]);
+            pwmWrite(pwmPins[i], computePwmDutyPercent(shouldBeOn, pwmIntensities[i]));
         }
     }
 

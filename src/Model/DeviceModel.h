@@ -82,6 +82,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int HX711_SCK=0; //UNDEFINED
 
     int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
+
+    // Roadmap #231 - all UNASSIGNED (-1). KC868-A6's relays sit entirely behind the PCF8574 I2C expander above, which has no PWM register at all - dimming here would need genuinely separate direct-GPIO pins wired to external MOSFET/SSR hardware, and which GPIOs are actually free after the relay I2C bus + onboard SX1278 LoRa socket + RS485/I2C peripherals is NOT yet verified against a real schematic (see agrumy-roadmap-todo.md #231's own explicit caveat) - do not assign a pin here without checking real hardware first.
+    int PWM_PINS[4] = {-1, -1, -1, -1};
 #elif defined(AGRUMY_KIT_ESP32S3_RELAY6CH)
     // Not physically verified against real hardware (confirm before first field deploy) - direct GPIO, same digitalWrite/pinMode model as esp32dev/esp32s3usbotg, no I2C expander on this kit.
     int POWER_RAIL_PRIMARY=0; //UNDEFINED
@@ -108,6 +111,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int HX711_SCK=0; //UNDEFINED
 
     int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
+
+    // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
+    int PWM_PINS[4] = {-1, -1, -1, -1};
 #else
     int POWER_RAIL_PRIMARY=2;
     int POWER_RAIL_SECONDARY=15;
@@ -133,6 +139,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int HX711_SCK=0; //UNDEFINED
 
     int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
+
+    // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
+    int PWM_PINS[4] = {-1, -1, -1, -1};
 #endif
 
     // SDA/SCL only meaningful when RELAY_I2C_ADDRESS is nonzero (else direct GPIO, no I2C expander).
@@ -223,6 +232,9 @@ static const int MAX_RULES = 32;
 // Ceiling on physically-wired relay slots a board can report - bump this (and each board's ConfigPin.RELAY_PINS array) for a bigger relay bank, no other schema/wire-format change needed.
 static const int MAX_RELAY_SLOTS = 8;
 
+// Roadmap #231 - separate cap from MAX_RELAY_SLOTS since PWM outputs use their own dedicated ConfigPin.PWM_PINS array, never shared with the relay bank.
+static const int MAX_PWM_SLOTS = 4;
+
 // Floor for sleepSeconds, applied at parse time regardless of server-side validation - same value ActuatorController::computeNextWakeSeconds already floors sleep-schedule boundaries to, so both stay in agreement.
 static const int MIN_SLEEP_SECONDS = 30;
 
@@ -231,6 +243,14 @@ struct RelaySlot
 {
     int slot = 0;
     int relayFunction = 0;
+};
+
+// Roadmap #231 - one dedicated PWM output position (Slot, 1-based, indexes ConfigPin.PWM_PINS[Slot-1]), mirroring a relay function's on/off decision as a proportional signal rather than driving its own independent state - see ActuatorController::initController's remarks. Only takes effect when relayFunction also has a RelaySlot assigned (no relay assignment means no on/off decision to mirror), and only when the target board's PWM_PINS[Slot-1] is actually assigned (>=0) - every board ships with all four UNASSIGNED until a real schematic confirms free GPIOs.
+struct PwmSlot
+{
+    int slot = 0;
+    int relayFunction = 0;
+    int intensityPercent = 100;
 };
 
 // Roadmap #219.
@@ -291,6 +311,10 @@ struct ConfigController
     int relayEnabled;
     RelaySlot relays[MAX_RELAY_SLOTS];
     int relayCount = 0;
+
+    // Roadmap #231 - see PwmSlot's own remarks.
+    PwmSlot pwmSlots[MAX_PWM_SLOTS];
+    int pwmSlotCount = 0;
 };
 
 

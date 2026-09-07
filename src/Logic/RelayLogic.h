@@ -76,6 +76,9 @@ bool cooldownActive(time_t epochSeconds, time_t offSinceEpoch, int cooldownSecon
 // Roadmap #219: whether a manual override should force its target relay function ON this tick. Past expiresAtEpoch (the hard per-command safety cap, computed server-side from the zone's own MaxRunSeconds) always returns false regardless of mode - the caller falls back to its normal automated-rule result for that tick. Also false while epochSeconds is implausible (before the first NTP/server-epoch sync - same MIN_PLAUSIBLE_EPOCH gate CONDITION_INTERVAL/CONDITION_SCHEDULE already use in ActuatorController.cpp, duplicated here rather than #included to keep this header Arduino-independent), since expiresAtEpoch could otherwise never be reached and the override would run forever. mode==1 (Duration) is unconditional while inside the window; mode==2 (Target) defers to the SAME dead-zone math as an automated Threshold condition (computeThresholdState) - reading/threshold/hysteresis/turnsOnAboveThreshold are ignored for Duration mode.
 bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch, bool isCurrentlyOn, double reading, double threshold, double hysteresis, bool turnsOnAboveThreshold);
 
+// Roadmap #231 - PWM output is a proportional decorator on the SAME on/off decision a relay slot already computed for this function, not an independent output: full intensityPercent while on, 0 while off. Clamped to [0,100] since a bad server value must not exceed the physical duty-cycle range.
+int computePwmDutyPercent(bool shouldBeOn, int intensityPercent);
+
 // Dry-run protection: true if WaterPump must be forced off regardless of what Threshold/Interval/Schedule/Manual
 // decided, because the tank is below minLevelPercent - covers Interval/Schedule/Manual too, which never consult
 // waterLevel on their own. minLevelPercent<=0 or rawEmpty==rawFull (uncalibrated - a Water Valve zone with no tank

@@ -7,6 +7,7 @@
 #include "../Logic/RelayLogic.h"
 #include "../Logic/SleepScheduleLogic.h"
 #include "RelayIO.h"
+#include "PwmIO.h"
 
 // Forward declarations instead of includes
 class DeviceController;
@@ -51,6 +52,9 @@ public:
 private:
     // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
     int collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const;
+
+    // Roadmap #231 - same idea as collectPinsForFunction but for ConfigController.pwmSlots[], returning the resolved PWM_PINS[] pin + intensityPercent pairs (caller-provided arrays, must each hold MAX_PWM_SLOTS). Skips a slot whose PWM_PINS[slot-1] is -1 (unassigned on this board). Returns how many were found.
+    int collectPwmSlotsForFunction(RelayFunctionType relayFunction, int pins[MAX_PWM_SLOTS], int intensities[MAX_PWM_SLOTS]) const;
 
     // Shared by initController()'s EmergencyStop/relayEnabled branch and forceAllRelaysOff().
     void driveEveryAssignedRelayOff() const;

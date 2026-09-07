@@ -332,5 +332,21 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
         relaySlot.relayFunction = r["relayFunction"];
         currentConfig.configController.relayCount++;
     }
+
+    // Roadmap #231 - capped at MAX_PWM_SLOTS, same "ArduinoJson has no dynamic growth on-device" reasoning as relays above. Absent entirely (server never sends pwmSlots) parses to pwmSlotCount 0, same as an empty array.
+    JsonArray pwmSlots = deviceConfigController["pwmSlots"];
+    currentConfig.configController.pwmSlotCount = 0;
+    for (JsonObject p : pwmSlots)
+    {
+        if (currentConfig.configController.pwmSlotCount >= MAX_PWM_SLOTS)
+        {
+            break;
+        }
+        PwmSlot &pwmSlot = currentConfig.configController.pwmSlots[currentConfig.configController.pwmSlotCount];
+        pwmSlot.slot = p["slot"];
+        pwmSlot.relayFunction = p["relayFunction"];
+        pwmSlot.intensityPercent = p["intensityPercent"] | 100;
+        currentConfig.configController.pwmSlotCount++;
+    }
   }
 }

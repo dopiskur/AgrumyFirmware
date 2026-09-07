@@ -97,6 +97,15 @@ bool waterPumpBlockedByLowTank(double waterLevel, int rawEmpty, int rawFull, dou
     return (fraction * 100.0) < minLevelPercent;
 }
 
+int computePwmDutyPercent(bool shouldBeOn, int intensityPercent)
+{
+    if (!shouldBeOn)
+    {
+        return 0;
+    }
+    return intensityPercent < 0 ? 0 : (intensityPercent > 100 ? 100 : intensityPercent);
+}
+
 namespace
 {
     // Magnus formula, same constants api.Utils.DewPointCalculator uses server-side.
