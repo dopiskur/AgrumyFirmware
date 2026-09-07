@@ -52,9 +52,17 @@ static bool max17048status;
 static bool ds18b20status; // true once at least one DS18B20 answers on the bus
 
 
+#ifdef AGRUMY_KIT_KC868_A6
+extern void runSensorCatalogExperiment(); // experiment/sensor-catalog-flash-test, see Controller/SensorCatalogExperiment.cpp
+#endif
+
 void SensorController::setupSensor()
 {
     Serial.println("[Sensor setup]");
+
+#ifdef AGRUMY_KIT_KC868_A6
+    runSensorCatalogExperiment();
+#endif
 
     dht11.begin();
     dht22.begin();
