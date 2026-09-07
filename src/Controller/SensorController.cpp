@@ -16,7 +16,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h> // DS18B20 soil temperature, single-wire bus
 
-// Roadmap #416 - extended catalog, real wiring of #415's flash-cost-only drivers.
+// Extended sensor catalog, real wiring of the earlier flash-cost-only experiment's drivers.
 #include <Adafruit_MAX31855.h>
 #include <Adafruit_MAX31856.h>
 #include <Adafruit_MAX31865.h>
@@ -81,7 +81,7 @@ static unsigned bh1750status;
 static bool max17048status;
 static bool ds18b20status; // true once at least one DS18B20 answers on the bus
 
-// Roadmap #416 - extended catalog. SPI chip-select pins come from deviceConfig at setupSensor() time (unknown at static-init, same reason oneWireTempSoil/ds18b20 above are pointers), so the three SPI sensor objects are too.
+// SPI chip-select pins come from deviceConfig at setupSensor() time (unknown at static-init, same reason oneWireTempSoil/ds18b20 above are pointers), so the three SPI sensor objects are too.
 static Adafruit_MAX31855 *max31855;
 static Adafruit_MAX31856 *max31856;
 static Adafruit_MAX31865 *max31865;
@@ -159,7 +159,7 @@ void SensorController::setupSensor()
     // Fixed I2C address 0x36, shares the bus already begun above. Harmless to call when BatterySensorType is None/VoltageDivider - it just never gets read.
     max17048status = maxlipo.begin();
 
-    // Roadmap #416 - extended catalog, same "only probe what this device's config actually selects" gating as above.
+    // Extended sensor catalog, same "only probe what this device's config actually selects" gating as above.
     if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Max31855)
     {
         max31855 = new Adafruit_MAX31855(deviceConfig.configPin.MAX31855_CS);
@@ -384,7 +384,7 @@ void SensorController::reportPressure(double pascals)
     sensorData.barometer = pascals;
 }
 
-// Roadmap #416 - same store-and-log tail as reportTemperature()/reportPressure(), for the new #416 sensor drivers below.
+// Same store-and-log tail as reportTemperature()/reportPressure(), for the extended catalog's new sensor drivers below.
 void SensorController::reportHumidity(double percent)
 {
     Serial.print("Humidity = ");
@@ -503,7 +503,7 @@ void SensorController::sensor_BH1750_lux()
     sensorData.light = lux;
 }
 
-// Roadmap #416 - extended catalog read functions, one per (chip, quantity) pair, same convention as BME280/BMP280 above.
+// Extended catalog read functions, one per (chip, quantity) pair, same convention as BME280/BMP280 above.
 void SensorController::sensor_MAX31855_temp()
 {
     Serial.println("[Sensor] MAX31855 temperature");
@@ -796,7 +796,7 @@ void SensorController::sensor_AS7341_lux()
 {
     Serial.println("[Sensor] AS7341 clear channel");
     if (!as7341Status || !as7341.readAllChannels()) { reportSensorInitError("AS7341"); return; }
-    // No lux conversion in the Adafruit library - raw clear-channel count used as-is, same as #415's own experiment read.
+    // No lux conversion in the Adafruit library - raw clear-channel count used as-is, same as the earlier flash-cost experiment's own read.
     sensorData.light = as7341.getChannel(AS7341_CHANNEL_CLEAR);
 }
 
@@ -1373,7 +1373,7 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
 
     switch (deviceConfig.configSensor.sensorPH)
     {
-    // Roadmap #416 - closes #202's pH gap for these two concrete, chosen models (generic/unspecified pH probes still stay unimplemented per #202).
+    // Two concrete, chosen pH models get real wiring here; a generic/unspecified pH probe still stays unimplemented (no universal calibration curve exists for one).
     case SensorTypeIds::EzoPh:
         sensor_EzoPH_ph();
         break;

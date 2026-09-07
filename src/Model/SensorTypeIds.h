@@ -13,7 +13,7 @@ namespace SensorTypeIds
     constexpr int Ds18B20 = 1007;
     constexpr int Bh1750 = 1008;
     constexpr int Max17048 = 1009;
-    // Roadmap #416 - extended catalog (#415's flash-cost experiment), one ID per physical sensor model.
+    // Extended catalog, one ID per physical sensor model.
     constexpr int Max31855 = 1010;
     constexpr int Max31856 = 1011;
     constexpr int Max31865 = 1012;

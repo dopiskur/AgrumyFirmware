@@ -42,7 +42,7 @@ private:
     void sensor_analog_waterLevel(); // SensorTypeIds::AnalogWaterLevel
     void sensor_rainLevel(); // unavailable
 
-    // Roadmap #416 - extended catalog, real wiring of #415's flash-cost-only drivers.
+    // Extended sensor catalog, real wiring of the earlier flash-cost-only experiment's drivers.
     void sensor_MAX31855_temp();   // SensorTypeIds::Max31855
     void sensor_MAX31856_temp();   // SensorTypeIds::Max31856
     void sensor_MAX31865_temp();   // SensorTypeIds::Max31865
@@ -82,7 +82,7 @@ private:
     void sensor_AS7341_lux();      // SensorTypeIds::As7341
     void sensor_HX711_weight();    // SensorTypeIds::Hx711
 
-    // Shared print/store tail for the #416 temp/humidity/pressure sensors above - same role as reportTemperature()/reportPressure(), separate so an unavailable reading (isnan) is never stored as a real 0.
+    // Shared print/store tail for the extended catalog's temp/humidity/pressure sensors above - same role as reportTemperature()/reportPressure(), separate so an unavailable reading (isnan) is never stored as a real 0.
     void reportHumidity(double percent);
     void reportEc(double milliSiemensPerCm);
     void reportWeight(double units);

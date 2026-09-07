@@ -74,7 +74,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
-    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
+    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
     int MAX31855_CS=0; //UNDEFINED
     int MAX31856_CS=0; //UNDEFINED
     int MAX31865_CS=0; //UNDEFINED
@@ -103,7 +103,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
-    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
+    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
     int MAX31855_CS=0; //UNDEFINED
     int MAX31856_CS=0; //UNDEFINED
     int MAX31865_CS=0; //UNDEFINED
@@ -131,7 +131,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=33;
     int BATTERY_ADC=36;
 
-    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as elsewhere in this struct.
+    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as elsewhere in this struct.
     int MAX31855_CS=0; //UNDEFINED
     int MAX31856_CS=0; //UNDEFINED
     int MAX31865_CS=0; //UNDEFINED
@@ -215,10 +215,10 @@ struct ConfigSensor
     int sensorRainLevel;
     int sensorWaterLevel;
     int sensorWind;
-    int sensorEc;     // Roadmap #416 - electrical conductivity (ADS1115Ec)
-    int sensorWeight; // Roadmap #416 - load cell (HX711)
+    int sensorEc;     // electrical conductivity (ADS1115Ec)
+    int sensorWeight; // load cell (HX711)
     double weightCalibrationFactor = 1.0; // HX711 set_scale() divisor - raw counts per real-world unit, calibrated per install
-    // No universal analog-EC-probe formula exists (same reason #202 left Wind/pH/rainLevel unimplemented) - identity default (1.0/0.0) reports raw millivolts until a real install calibrates against known-EC reference solutions, same convention as batteryDividerR1/R2 above.
+    // No universal analog-EC-probe formula exists (same reason Wind/pH/rainLevel stayed unimplemented for so long) - identity default (1.0/0.0) reports raw millivolts until a real install calibrates against known-EC reference solutions, same convention as batteryDividerR1/R2 above.
     double ecCalibrationSlope = 1.0;
     double ecCalibrationOffset = 0.0;
 };
@@ -401,8 +401,8 @@ struct SensorData
     double rainLevel = NAN;
     double waterLevel = NAN;
     double wind = NAN;
-    double ec = NAN;     // Roadmap #416
-    double weight = NAN; // Roadmap #416
+    double ec = NAN;
+    double weight = NAN;
     String dateCreated;
     EventLog eventlog;
 };
