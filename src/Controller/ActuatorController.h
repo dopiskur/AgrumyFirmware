@@ -83,6 +83,8 @@ private:
     String pendingSafetyEventMessage = "";
     mutable String pendingHardwareFaultMessage = "";
     mutable String pendingSensorStaleMessage = "";
+    // 0 = temperature reading currently valid (or never gone stale yet); set to the epoch of the first NaN reading in a stale streak, cleared back to 0 the moment a real reading returns. const: touched from evaluateCondition(), which is const.
+    mutable time_t heatingSensorStaleSinceEpoch = 0;
 };
 
 // The one ActuatorController instance, defined in main.cpp.

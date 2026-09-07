@@ -11,6 +11,9 @@
 // 2023-11-14 UTC, safely before any real deployment - distinguishes a genuine epoch from the 0 (or near-0) value NTPClient reports before its first successful sync.
 static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
 
+// Heating holds its last state across a NaN reading (staying off risks freezing while the sensor is briefly down) but not forever - past this many seconds of continuous staleness the risk flips (a genuinely dead sensor with the heater stuck on is its own hazard), so it forces off instead.
+static const int MAX_HEATING_SENSOR_STALE_SECONDS = 30 * 60;
+
 void ActuatorController::setupController(){
 
 
@@ -104,12 +107,25 @@ bool ActuatorController::evaluateCondition(const Condition &condition, int targe
         if (isnan(reading))
         {
             reportSensorStale("Function " + String(targetFunction) + " threshold condition has no reading this cycle (sensor absent/disabled/failed)");
-            // fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed instead of forcing it off.
+            // fail-OFF (WaterPump/Light/Ventilation - a false-positive "on" is worse than staying off) is the wrong direction for Heating, where staying off risks freezing while the sensor is down. Hold whatever this condition last contributed, but only up to MAX_HEATING_SENSOR_STALE_SECONDS - a sensor that never recovers must not leave a heater stuck on indefinitely.
             if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
             {
+                if (heatingSensorStaleSinceEpoch == 0)
+                {
+                    heatingSensorStaleSinceEpoch = epochSeconds;
+                }
+                if (runTimeCeilingHit(epochSeconds, heatingSensorStaleSinceEpoch, MAX_HEATING_SENSOR_STALE_SECONDS))
+                {
+                    reportSensorStale("Heating forced off - temperature sensor has been stale for over " + String(MAX_HEATING_SENSOR_STALE_SECONDS) + "s");
+                    return false;
+                }
                 return isCurrentlyOn;
             }
             return false;
+        }
+        if ((RelayFunctionType)targetFunction == RelayFunctionType::Heating)
+        {
+            heatingSensorStaleSinceEpoch = 0;
         }
         return computeThresholdState(isCurrentlyOn, reading, condition.threshold, condition.hysteresis, turnsOnAboveThreshold);
     }
