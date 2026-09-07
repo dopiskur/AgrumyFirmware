@@ -1,14 +1,18 @@
 #include "Controller/LoRaPrivateController.h"
 #include "Logic/BatteryLogic.h"
+#include "Logic/LoRaPrivatePayloadFramingLogic.h"
 #include <RadioLib.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include "mbedtls/gcm.h"
 
 namespace
 {
     // Leading "/" required - LittleFS.exists()/open() reject a bare filename (confirmed on real ESP32-S3 hardware).
     const char *CONFIG_FILE = "/loraPrivateRegistration.json";
+    // 8 raw bytes, big-endian - separate from CONFIG_FILE so a per-uplink counter save is a small, fast, isolated write.
+    const char *COUNTER_FILE = "/loraPrivateCounter.dat";
 
     // Heltec WiFi LoRa 32 V3 (ESP32-S3+SX1262) pin mapping - confirmed correct on real hardware (radio.begin() succeeds, 2026-09-06).
     const int PIN_SCK = 9;
@@ -62,6 +66,59 @@ bool LoRaPrivateController::loadConfig()
     bandwidthKHz = doc["bandwidthKHz"] | 125.0;
     codingRate = doc["codingRate"] | 7;
     txPowerDbm = doc["txPowerDbm"] | 22;
+
+    // Roadmap #395 finding 3 - mandatory from here on, AgrumyService's RelayUplink now rejects any uplink from a device with no key provisioned, so an un-keyed node has nothing useful to transmit.
+    String pskHex = doc["psk"] | String("");
+    if (pskHex.length() != 64)
+    {
+        Serial.println("[LoRaPrivate] loraPrivateRegistration.json has no valid 64-char hex 'psk' - device needs (re-)provisioning via DeviceApiController.LoRaPrivateKeyGenerate.");
+        return false;
+    }
+    for (int i = 0; i < 32; i++)
+    {
+        privateKey[i] = (uint8_t)strtoul(pskHex.substring(i * 2, i * 2 + 2).c_str(), nullptr, 16);
+    }
+
+    uplinkCounter = loadCounter();
+    return true;
+}
+
+uint64_t LoRaPrivateController::loadCounter()
+{
+    if (!LittleFS.exists(COUNTER_FILE))
+    {
+        return 0;
+    }
+    File f = LittleFS.open(COUNTER_FILE, "r");
+    if (!f || f.size() < 8)
+    {
+        if (f)
+        {
+            f.close();
+        }
+        return 0;
+    }
+    uint64_t value = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        value = (value << 8) | (uint8_t)f.read();
+    }
+    f.close();
+    return value;
+}
+
+bool LoRaPrivateController::saveCounter(uint64_t value)
+{
+    File f = LittleFS.open(COUNTER_FILE, "w");
+    if (!f)
+    {
+        return false;
+    }
+    for (int shift = 56; shift >= 0; shift -= 8)
+    {
+        f.write((uint8_t)((value >> shift) & 0xFF));
+    }
+    f.close();
     return true;
 }
 
@@ -116,7 +173,37 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
 
     LoRaSensorReading reading = readSensors();
     std::string jsonPayload = encodeLoRaSensorUplink(reading);
-    std::string frame = encodeLoRaPrivateFrame(gatewayAddress, nodeAddress, jsonPayload);
+
+    // Counter saved BEFORE transmit, not after - a crash/power-loss between transmit and save could otherwise let the same counter (and its nonce) be reused on the next boot, which breaks AES-GCM's security guarantee.
+    uint64_t counter = uplinkCounter + 1;
+    if (!saveCounter(counter))
+    {
+        Serial.println("[LoRaPrivate] Could not persist uplink counter - skipping this uplink rather than risk nonce reuse.");
+        return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
+    }
+    uplinkCounter = counter;
+
+    uint8_t nonce[12] = {0}; // 4 zero bytes + the 8-byte counter, matching api.LoRa.LoRaPrivatePayloadCrypto's nonce derivation
+    for (int i = 0; i < 8; i++)
+    {
+        nonce[4 + i] = (uint8_t)((counter >> (56 - i * 8)) & 0xFF);
+    }
+    std::string ciphertext(jsonPayload.size(), '\0');
+    uint8_t tag[16];
+    mbedtls_gcm_context gcm;
+    mbedtls_gcm_init(&gcm);
+    mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, privateKey, 256);
+    int gcmResult = mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT, jsonPayload.size(), nonce, sizeof(nonce), nullptr, 0,
+                                               (const unsigned char *)jsonPayload.data(), (unsigned char *)&ciphertext[0], sizeof(tag), tag);
+    mbedtls_gcm_free(&gcm);
+    if (gcmResult != 0)
+    {
+        Serial.printf("[LoRaPrivate] AES-GCM encrypt failed, code %d\n", gcmResult);
+        return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
+    }
+
+    std::string wirePayload = encodeLoRaPrivateCipherFrame(counter, ciphertext, tag);
+    std::string frame = encodeLoRaPrivateFrame(gatewayAddress, nodeAddress, wirePayload);
 
     int state = loRaPrivateRadio.transmit((const uint8_t *)frame.data(), frame.size());
     if (state != RADIOLIB_ERR_NONE)
@@ -124,7 +211,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
         Serial.printf("[LoRaPrivate] Transmit failed, code %d\n", state);
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
-    Serial.printf("[LoRaPrivate] Sent %u bytes to gateway=%u: %s\n", (unsigned)jsonPayload.size(), gatewayAddress, jsonPayload.c_str());
+    Serial.printf("[LoRaPrivate] Sent %u encrypted bytes (counter=%llu) to gateway=%u\n", (unsigned)wirePayload.size(), (unsigned long long)counter, gatewayAddress);
 
     uint8_t downlinkBuf[64];
     state = loRaPrivateRadio.receive(downlinkBuf, sizeof(downlinkBuf), DOWNLINK_LISTEN_TIMEOUT_MS);

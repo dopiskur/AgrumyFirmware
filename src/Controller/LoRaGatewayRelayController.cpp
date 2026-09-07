@@ -4,9 +4,24 @@
 #include <RadioLib.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include "mbedtls/base64.h"
 
 namespace
 {
+    // Roadmap #395 finding 3 - frame.payload is now AES-256-GCM ciphertext (this controller stays "deliberately dumb", it never decrypts), and JSON strings must be valid UTF-8 text - base64 is how it crosses the RelayUplink HTTP/JSON boundary intact.
+    String base64Encode(const std::string &data)
+    {
+        size_t outLen = 0;
+        mbedtls_base64_encode(nullptr, 0, &outLen, (const unsigned char *)data.data(), data.size());
+        String out;
+        out.reserve(outLen);
+        std::string buffer(outLen, '\0');
+        size_t written = 0;
+        mbedtls_base64_encode((unsigned char *)&buffer[0], outLen, &written, (const unsigned char *)data.data(), data.size());
+        out.concat(buffer.data(), written);
+        return out;
+    }
+
     // Needs real margin, same reasoning as LoRaGatewayBridgeController's identical constant - a
     // node's uplink arrives with no shared clock, a short window can start mid-preamble and miss it.
     const uint32_t RX_POLL_TIMEOUT_MS = 1000;
@@ -93,6 +108,6 @@ void LoRaGatewayRelayController::poll(ServiceController &service, ServiceRequest
 
     JsonDocument body;
     body["SourceAddress"] = frame.srcAddress;
-    body["Payload"] = frame.payload;
+    body["Payload"] = base64Encode(frame.payload);
     service.requestPost(body, serviceRequest);
 }

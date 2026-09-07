@@ -27,6 +27,8 @@ public:
 private:
     bool loadConfig();
     LoRaSensorReading readSensors();
+    uint64_t loadCounter();
+    bool saveCounter(uint64_t value);
 
     uint16_t nodeAddress = 0;
     uint16_t gatewayAddress = 0;
@@ -36,6 +38,11 @@ private:
     uint8_t codingRate = 7;
     int8_t txPowerDbm = 22;
     bool configLoaded = false;
+
+    // Roadmap #395 finding 3 - AES-256-GCM key for uplink encryption, hex-decoded from loraPrivateRegistration.json's "psk" field; a missing/malformed key is treated as "needs pre-provisioning", same as a missing config file.
+    uint8_t privateKey[32] = {0};
+    // Persisted separately from CONFIG_FILE (own small file) so a routine per-uplink counter save never risks rewriting/corrupting the provisioned psk/addresses.
+    uint64_t uplinkCounter = 0;
 };
 
 #endif
