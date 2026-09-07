@@ -16,6 +16,36 @@
 #include <OneWire.h>
 #include <DallasTemperature.h> // DS18B20 soil temperature, single-wire bus
 
+// Roadmap #416 - extended catalog, real wiring of #415's flash-cost-only drivers.
+#include <Adafruit_MAX31855.h>
+#include <Adafruit_MAX31856.h>
+#include <Adafruit_MAX31865.h>
+#include <Adafruit_MLX90614.h>
+#include <Adafruit_MCP9808.h>
+#include <Adafruit_AHTX0.h>
+#include <Adafruit_AM2320.h>
+#include <Adafruit_HTU21DF.h>
+#include <Adafruit_Si7021.h>
+#include <Adafruit_SHT31.h>
+#include <Adafruit_SHT4x.h>
+#include <Adafruit_SHTC3.h>
+#include <Adafruit_BME680.h>
+#include <Adafruit_DPS310.h>
+#include <SensirionI2cScd30.h>
+#include <SensirionI2cScd4x.h>
+#include <MHZ19.h>
+#include <I2CSoilMoistureSensor.h>
+#include <Ezo_i2c.h>
+#include <Anyleaf.h>
+#include <Adafruit_ADS1X15.h>
+#include <Adafruit_TSL2561_U.h>
+#include <Adafruit_TSL2591.h>
+#include <Adafruit_SI1145.h>
+#include <Adafruit_LTR390.h>
+#include <Adafruit_VEML7700.h>
+#include <Adafruit_AS7341.h>
+#include <HX711.h>
+
 #include <esp_task_wdt.h>
 
 #include "SensorController.h"
@@ -50,6 +80,44 @@ static unsigned bme280status;
 static unsigned bh1750status;
 static bool max17048status;
 static bool ds18b20status; // true once at least one DS18B20 answers on the bus
+
+// Roadmap #416 - extended catalog. SPI chip-select pins come from deviceConfig at setupSensor() time (unknown at static-init, same reason oneWireTempSoil/ds18b20 above are pointers), so the three SPI sensor objects are too.
+static Adafruit_MAX31855 *max31855;
+static Adafruit_MAX31856 *max31856;
+static Adafruit_MAX31865 *max31865;
+static Adafruit_MLX90614 mlx90614;
+static Adafruit_MCP9808 mcp9808;
+static Adafruit_AHTX0 aht;
+static Adafruit_AM2320 am2320;
+static Adafruit_HTU21DF htu21df;
+static Adafruit_Si7021 si7021;
+static Adafruit_SHT31 sht31;
+static Adafruit_SHT4x sht4x;
+static Adafruit_SHTC3 shtc3;
+static Adafruit_BME680 bme680;
+static Adafruit_DPS310 dps310;
+static SensirionI2cScd30 scd30;
+static SensirionI2cScd4x scd4x;
+static MHZ19 mhz19(&Serial2); // Stream* is a constructor argument, not a begin() parameter - same reason DS18B20's OneWire is constructed at setupSensor() time, but Serial2 is a fixed global so this can happen at static-init instead
+static I2CSoilMoistureSensor chirpSoilMoisture;
+static Ezo_board ezoPh(99, "PH");
+static PhSensor anyleafPh;
+static Adafruit_ADS1115 ads1115;
+static Adafruit_TSL2561_Unified tsl2561(TSL2561_ADDR_FLOAT, 12345);
+static Adafruit_TSL2591 tsl2591(12346);
+static Adafruit_SI1145 si1145;
+static Adafruit_LTR390 ltr390;
+static Adafruit_VEML7700 veml7700;
+static Adafruit_AS7341 as7341;
+static HX711 hx711Scale;
+
+static bool max31855status, max31856status, max31865status, mlx90614status, mcp9808status;
+static bool ahtStatus, am2320Status, htu21dfStatus, si7021Status, sht31Status, sht4xStatus, shtc3Status, bme680Status, dps310Status;
+static bool scd30Status, scd4xStatus, mhz19Status;
+static bool chirpStatus;
+static bool ezoPhStatus, anyleafPhStatus, ads1115Status;
+static bool tsl2561Status, tsl2591Status, si1145Status, ltr390Status, veml7700Status, as7341Status;
+static bool hx711Status;
 
 
 void SensorController::setupSensor()
@@ -90,6 +158,136 @@ void SensorController::setupSensor()
 
     // Fixed I2C address 0x36, shares the bus already begun above. Harmless to call when BatterySensorType is None/VoltageDivider - it just never gets read.
     max17048status = maxlipo.begin();
+
+    // Roadmap #416 - extended catalog, same "only probe what this device's config actually selects" gating as above.
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Max31855)
+    {
+        max31855 = new Adafruit_MAX31855(deviceConfig.configPin.MAX31855_CS);
+        max31855status = max31855->begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Max31856)
+    {
+        max31856 = new Adafruit_MAX31856(deviceConfig.configPin.MAX31856_CS);
+        max31856status = max31856->begin();
+        if (max31856status) max31856->setThermocoupleType(MAX31856_TCTYPE_K);
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Max31865)
+    {
+        max31865 = new Adafruit_MAX31865(deviceConfig.configPin.MAX31865_CS);
+        max31865status = max31865->begin(MAX31865_2WIRE);
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Mlx90614)
+    {
+        mlx90614status = mlx90614.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Mcp9808)
+    {
+        mcp9808status = mcp9808.begin(0x18);
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Aht || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Aht)
+    {
+        ahtStatus = aht.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Am2320 || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Am2320)
+    {
+        am2320Status = am2320.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Htu21Df || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Htu21Df)
+    {
+        htu21dfStatus = htu21df.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Si7021 || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Si7021)
+    {
+        si7021Status = si7021.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Sht31 || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Sht31)
+    {
+        sht31Status = sht31.begin(0x44);
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Sht4x || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Sht4x)
+    {
+        sht4xStatus = sht4x.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Shtc3 || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Shtc3)
+    {
+        shtc3Status = shtc3.begin();
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Bme680 || deviceConfig.configSensor.sensorHumid == SensorTypeIds::Bme680 || deviceConfig.configSensor.sensorBarometer == SensorTypeIds::Bme680)
+    {
+        bme680Status = bme680.begin(0x77);
+    }
+    if (deviceConfig.configSensor.sensorTemp == SensorTypeIds::Dps310 || deviceConfig.configSensor.sensorBarometer == SensorTypeIds::Dps310)
+    {
+        dps310Status = dps310.begin_I2C();
+    }
+    if (deviceConfig.configSensor.sensorCo2 == SensorTypeIds::Scd30)
+    {
+        scd30.begin(Wire, SCD30_I2C_ADDR_61);
+        scd30Status = scd30.startPeriodicMeasurement(0) == 0;
+    }
+    if (deviceConfig.configSensor.sensorCo2 == SensorTypeIds::Scd4x)
+    {
+        scd4x.begin(Wire, SCD41_I2C_ADDR_62);
+        scd4xStatus = scd4x.startPeriodicMeasurement() == 0;
+    }
+    if (deviceConfig.configSensor.sensorCo2 == SensorTypeIds::Mhz19)
+    {
+        // No dedicated config pins for this UART (see ConfigPin) - default ESP32 hardware UART2 pins (RX16/TX17).
+        Serial2.begin(9600);
+        mhz19.setAutoCalibration(false);
+        mhz19Status = true;
+    }
+    if (deviceConfig.configSensor.sensorMoist == SensorTypeIds::ChirpSoilMoisture)
+    {
+        chirpSoilMoisture.begin();
+        chirpStatus = true; // library exposes no begin() success signal - matches its own upstream examples
+    }
+    if (deviceConfig.configSensor.sensorPH == SensorTypeIds::EzoPh)
+    {
+        ezoPhStatus = true; // Ezo_board has no begin()/init status - it only starts answering once send_read_cmd() actually gets a reply
+    }
+    if (deviceConfig.configSensor.sensorPH == SensorTypeIds::AnyleafPh)
+    {
+        anyleafPhStatus = true;
+    }
+    if (deviceConfig.configSensor.sensorEc == SensorTypeIds::Ads1115Ec)
+    {
+        ads1115Status = ads1115.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::Tsl2561)
+    {
+        tsl2561Status = tsl2561.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::Tsl2591)
+    {
+        tsl2591Status = tsl2591.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::Si1145)
+    {
+        si1145Status = si1145.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::Ltr390)
+    {
+        ltr390Status = ltr390.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::Veml7700)
+    {
+        veml7700Status = veml7700.begin();
+    }
+    if (deviceConfig.configSensor.sensorLight == SensorTypeIds::As7341)
+    {
+        as7341Status = as7341.begin();
+    }
+    if (deviceConfig.configSensor.sensorWeight == SensorTypeIds::Hx711)
+    {
+        hx711Scale.begin(deviceConfig.configPin.HX711_DOUT, deviceConfig.configPin.HX711_SCK);
+        hx711Status = hx711Scale.wait_ready_timeout(1000);
+        if (hx711Status)
+        {
+            hx711Scale.set_scale(deviceConfig.configSensor.weightCalibrationFactor);
+            hx711Scale.tare();
+        }
+    }
 
     delay(5000);
 }
@@ -186,6 +384,30 @@ void SensorController::reportPressure(double pascals)
     sensorData.barometer = pascals;
 }
 
+// Roadmap #416 - same store-and-log tail as reportTemperature()/reportPressure(), for the new #416 sensor drivers below.
+void SensorController::reportHumidity(double percent)
+{
+    Serial.print("Humidity = ");
+    Serial.print(percent);
+    Serial.println(" %");
+    sensorData.humidity = percent;
+}
+
+void SensorController::reportEc(double milliSiemensPerCm)
+{
+    Serial.print("EC = ");
+    Serial.print(milliSiemensPerCm);
+    Serial.println(" mS/cm");
+    sensorData.ec = milliSiemensPerCm;
+}
+
+void SensorController::reportWeight(double units)
+{
+    Serial.print("Weight = ");
+    Serial.println(units);
+    sensorData.weight = units;
+}
+
 void SensorController::sensor_BMP180_temp()
 {
     Serial.println("[Sensor] BMP180 temperature");
@@ -279,6 +501,310 @@ void SensorController::sensor_BH1750_lux()
     Serial.println();
 
     sensorData.light = lux;
+}
+
+// Roadmap #416 - extended catalog read functions, one per (chip, quantity) pair, same convention as BME280/BMP280 above.
+void SensorController::sensor_MAX31855_temp()
+{
+    Serial.println("[Sensor] MAX31855 temperature");
+    if (!max31855status) { reportSensorInitError("MAX31855"); return; }
+    double celsius = max31855->readCelsius();
+    if (isnan(celsius)) { reportSensorInitError("MAX31855"); return; }
+    reportTemperature(celsius);
+}
+
+void SensorController::sensor_MAX31856_temp()
+{
+    Serial.println("[Sensor] MAX31856 temperature");
+    if (!max31856status) { reportSensorInitError("MAX31856"); return; }
+    reportTemperature(max31856->readThermocoupleTemperature());
+}
+
+void SensorController::sensor_MAX31865_temp()
+{
+    Serial.println("[Sensor] MAX31865 temperature");
+    if (!max31865status) { reportSensorInitError("MAX31865"); return; }
+    // PT100/430ohm reference - Adafruit board default, not verified against a real install (see ConfigPin comment).
+    reportTemperature(max31865->temperature(100.0, 430.0));
+}
+
+void SensorController::sensor_MLX90614_temp()
+{
+    Serial.println("[Sensor] MLX90614 temperature");
+    if (!mlx90614status) { reportSensorInitError("MLX90614"); return; }
+    reportTemperature(mlx90614.readObjectTempC());
+}
+
+void SensorController::sensor_MCP9808_temp()
+{
+    Serial.println("[Sensor] MCP9808 temperature");
+    if (!mcp9808status) { reportSensorInitError("MCP9808"); return; }
+    reportTemperature(mcp9808.readTempC());
+}
+
+void SensorController::sensor_AHT_temp()
+{
+    Serial.println("[Sensor] AHT temperature");
+    if (!ahtStatus) { reportSensorInitError("AHT"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    aht.getEvent(&humidityEvent, &tempEvent);
+    reportTemperature(tempEvent.temperature);
+}
+void SensorController::sensor_AHT_humid()
+{
+    Serial.println("[Sensor] AHT humidity");
+    if (!ahtStatus) { reportSensorInitError("AHT"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    aht.getEvent(&humidityEvent, &tempEvent);
+    reportHumidity(humidityEvent.relative_humidity);
+}
+
+void SensorController::sensor_AM2320_temp()
+{
+    Serial.println("[Sensor] AM2320 temperature");
+    if (!am2320Status) { reportSensorInitError("AM2320"); return; }
+    reportTemperature(am2320.readTemperature());
+}
+void SensorController::sensor_AM2320_humid()
+{
+    Serial.println("[Sensor] AM2320 humidity");
+    if (!am2320Status) { reportSensorInitError("AM2320"); return; }
+    reportHumidity(am2320.readHumidity());
+}
+
+void SensorController::sensor_HTU21DF_temp()
+{
+    Serial.println("[Sensor] HTU21DF temperature");
+    if (!htu21dfStatus) { reportSensorInitError("HTU21DF"); return; }
+    reportTemperature(htu21df.readTemperature());
+}
+void SensorController::sensor_HTU21DF_humid()
+{
+    Serial.println("[Sensor] HTU21DF humidity");
+    if (!htu21dfStatus) { reportSensorInitError("HTU21DF"); return; }
+    reportHumidity(htu21df.readHumidity());
+}
+
+void SensorController::sensor_SI7021_temp()
+{
+    Serial.println("[Sensor] Si7021 temperature");
+    if (!si7021Status) { reportSensorInitError("Si7021"); return; }
+    reportTemperature(si7021.readTemperature());
+}
+void SensorController::sensor_SI7021_humid()
+{
+    Serial.println("[Sensor] Si7021 humidity");
+    if (!si7021Status) { reportSensorInitError("Si7021"); return; }
+    reportHumidity(si7021.readHumidity());
+}
+
+void SensorController::sensor_SHT31_temp()
+{
+    Serial.println("[Sensor] SHT31 temperature");
+    if (!sht31Status) { reportSensorInitError("SHT31"); return; }
+    reportTemperature(sht31.readTemperature());
+}
+void SensorController::sensor_SHT31_humid()
+{
+    Serial.println("[Sensor] SHT31 humidity");
+    if (!sht31Status) { reportSensorInitError("SHT31"); return; }
+    reportHumidity(sht31.readHumidity());
+}
+
+void SensorController::sensor_SHT4x_temp()
+{
+    Serial.println("[Sensor] SHT4x temperature");
+    if (!sht4xStatus) { reportSensorInitError("SHT4x"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    sht4x.getEvent(&humidityEvent, &tempEvent);
+    reportTemperature(tempEvent.temperature);
+}
+void SensorController::sensor_SHT4x_humid()
+{
+    Serial.println("[Sensor] SHT4x humidity");
+    if (!sht4xStatus) { reportSensorInitError("SHT4x"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    sht4x.getEvent(&humidityEvent, &tempEvent);
+    reportHumidity(humidityEvent.relative_humidity);
+}
+
+void SensorController::sensor_SHTC3_temp()
+{
+    Serial.println("[Sensor] SHTC3 temperature");
+    if (!shtc3Status) { reportSensorInitError("SHTC3"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    shtc3.getEvent(&humidityEvent, &tempEvent);
+    reportTemperature(tempEvent.temperature);
+}
+void SensorController::sensor_SHTC3_humid()
+{
+    Serial.println("[Sensor] SHTC3 humidity");
+    if (!shtc3Status) { reportSensorInitError("SHTC3"); return; }
+    sensors_event_t humidityEvent, tempEvent;
+    shtc3.getEvent(&humidityEvent, &tempEvent);
+    reportHumidity(humidityEvent.relative_humidity);
+}
+
+void SensorController::sensor_BME680_temp()
+{
+    Serial.println("[Sensor] BME680 temperature");
+    if (!bme680Status || !bme680.performReading()) { reportSensorInitError("BME680"); return; }
+    reportTemperature(bme680.temperature);
+}
+void SensorController::sensor_BME680_humid()
+{
+    Serial.println("[Sensor] BME680 humidity");
+    if (!bme680Status || !bme680.performReading()) { reportSensorInitError("BME680"); return; }
+    reportHumidity(bme680.humidity);
+}
+void SensorController::sensor_BME680_pres()
+{
+    Serial.println("[Sensor] BME680 pressure");
+    if (!bme680Status || !bme680.performReading()) { reportSensorInitError("BME680"); return; }
+    reportPressure(bme680.pressure);
+}
+
+void SensorController::sensor_DPS310_temp()
+{
+    Serial.println("[Sensor] DPS310 temperature");
+    sensors_event_t tempEvent, pressureEvent;
+    if (!dps310Status || !dps310.getEvents(&tempEvent, &pressureEvent)) { reportSensorInitError("DPS310"); return; }
+    reportTemperature(tempEvent.temperature);
+}
+void SensorController::sensor_DPS310_pres()
+{
+    Serial.println("[Sensor] DPS310 pressure");
+    sensors_event_t tempEvent, pressureEvent;
+    if (!dps310Status || !dps310.getEvents(&tempEvent, &pressureEvent)) { reportSensorInitError("DPS310"); return; }
+    reportPressure(pressureEvent.pressure * 100.0); // library reports hPa, reportPressure()/sensorData.barometer is Pa everywhere else
+}
+
+void SensorController::sensor_SCD30_co2()
+{
+    Serial.println("[Sensor] SCD30 CO2");
+    if (!scd30Status) { reportSensorInitError("SCD30"); return; }
+    float co2, temp, hum;
+    if (scd30.readMeasurementData(co2, temp, hum) != 0) { reportSensorInitError("SCD30"); return; }
+    Serial.println(co2);
+    sensorData.co2 = co2;
+}
+
+void SensorController::sensor_SCD4x_co2()
+{
+    Serial.println("[Sensor] SCD4x CO2");
+    if (!scd4xStatus) { reportSensorInitError("SCD4x"); return; }
+    uint16_t co2;
+    float temp, hum;
+    if (scd4x.readMeasurement(co2, temp, hum) != 0) { reportSensorInitError("SCD4x"); return; }
+    Serial.println(co2);
+    sensorData.co2 = co2;
+}
+
+void SensorController::sensor_MHZ19_co2()
+{
+    Serial.println("[Sensor] MH-Z19 CO2");
+    if (!mhz19Status) { reportSensorInitError("MHZ19"); return; }
+    mhz19.retrieveData();
+    int co2 = mhz19.getCO2();
+    Serial.println(co2);
+    sensorData.co2 = co2;
+}
+
+void SensorController::sensor_Chirp_moist()
+{
+    Serial.println("[Sensor] Chirp soil moisture");
+    if (!chirpStatus) { reportSensorInitError("Chirp"); return; }
+    unsigned int capacitance = chirpSoilMoisture.getCapacitance();
+    Serial.print("Capacitance: ");
+    Serial.println(capacitance);
+    // Typical Chirp dry/wet raw capacitance range - not calibrated against a specific real install (same caveat as sensor_analog_moist's soilWet/soilDry).
+    const unsigned int chirpDry = 300, chirpWet = 700;
+    sensorData.moisture = map(constrain((int)capacitance, (int)chirpDry, (int)chirpWet), chirpDry, chirpWet, 0, 100);
+}
+
+void SensorController::sensor_EzoPH_ph()
+{
+    Serial.println("[Sensor] Atlas EZO pH");
+    if (!ezoPhStatus) { reportSensorInitError("EzoPH"); return; }
+    ezoPh.send_read_cmd();
+    delay(900); // EZO boards need ~900ms to complete a reading before the result can be collected
+    ezoPh.receive_read_cmd();
+    float ph = ezoPh.get_last_received_reading();
+    Serial.println(ph);
+    sensorData.liquidPH = ph;
+}
+
+void SensorController::sensor_AnyleafPH_ph()
+{
+    Serial.println("[Sensor] Anyleaf pH");
+    if (!anyleafPhStatus) { reportSensorInitError("AnyleafPH"); return; }
+    float ph = anyleafPh.read();
+    Serial.println(ph);
+    sensorData.liquidPH = ph;
+}
+
+void SensorController::sensor_ADS1115_ec()
+{
+    Serial.println("[Sensor] ADS1115 EC");
+    if (!ads1115Status) { reportSensorInitError("ADS1115"); return; }
+    int16_t raw = ads1115.readADC_SingleEnded(0);
+    double millivolts = ads1115.computeVolts(raw) * 1000.0;
+    reportEc(millivolts * deviceConfig.configSensor.ecCalibrationSlope + deviceConfig.configSensor.ecCalibrationOffset);
+}
+
+void SensorController::sensor_TSL2561_lux()
+{
+    Serial.println("[Sensor] TSL2561 lux");
+    if (!tsl2561Status) { reportSensorInitError("TSL2561"); return; }
+    sensors_event_t event;
+    tsl2561.getEvent(&event);
+    if (!event.light) { reportSensorInitError("TSL2561"); return; }
+    sensorData.light = event.light;
+}
+
+void SensorController::sensor_TSL2591_lux()
+{
+    Serial.println("[Sensor] TSL2591 lux");
+    if (!tsl2591Status) { reportSensorInitError("TSL2591"); return; }
+    sensorData.light = tsl2591.getLuminosity(TSL2591_VISIBLE);
+}
+
+void SensorController::sensor_SI1145_lux()
+{
+    Serial.println("[Sensor] SI1145 lux");
+    if (!si1145Status) { reportSensorInitError("SI1145"); return; }
+    sensorData.light = si1145.readVisible();
+}
+
+void SensorController::sensor_LTR390_lux()
+{
+    Serial.println("[Sensor] LTR390 ambient light");
+    if (!ltr390Status) { reportSensorInitError("LTR390"); return; }
+    ltr390.setMode(LTR390_MODE_ALS);
+    if (!ltr390.newDataAvailable()) { reportSensorInitError("LTR390"); return; }
+    sensorData.light = ltr390.readALS();
+}
+
+void SensorController::sensor_VEML7700_lux()
+{
+    Serial.println("[Sensor] VEML7700 lux");
+    if (!veml7700Status) { reportSensorInitError("VEML7700"); return; }
+    sensorData.light = veml7700.readLux();
+}
+
+void SensorController::sensor_AS7341_lux()
+{
+    Serial.println("[Sensor] AS7341 clear channel");
+    if (!as7341Status || !as7341.readAllChannels()) { reportSensorInitError("AS7341"); return; }
+    // No lux conversion in the Adafruit library - raw clear-channel count used as-is, same as #415's own experiment read.
+    sensorData.light = as7341.getChannel(AS7341_CHANNEL_CLEAR);
+}
+
+void SensorController::sensor_HX711_weight()
+{
+    Serial.println("[Sensor] HX711 weight");
+    if (!hx711Status || !hx711Scale.is_ready()) { reportSensorInitError("HX711"); return; }
+    reportWeight(hx711Scale.get_units(10));
 }
 
 // CCS811 needs ~20min to heat up before it has data; available()+readData() is identical for both quantities, only the getter/target field differs per caller.
@@ -453,6 +979,8 @@ void SensorController::buildSensorDataPayload()
     jsonSensorData["rainLevel"]=!isnan(sensorData.rainLevel)? sensorData.rainLevel:  JsonVariant();
     jsonSensorData["waterLevel"]=!isnan(sensorData.waterLevel)? sensorData.waterLevel:  JsonVariant();
     jsonSensorData["wind"]=!isnan(sensorData.wind)? sensorData.wind:  JsonVariant();
+    jsonSensorData["ec"]=!isnan(sensorData.ec)? sensorData.ec:  JsonVariant();
+    jsonSensorData["weight"]=!isnan(sensorData.weight)? sensorData.weight:  JsonVariant();
     // Computed once - calling getDateTime() twice in one expression let the two calls straddle a second boundary and disagree.
     String dateCreated = device.getDateTime();
     jsonSensorData["dateCreated"]=(dateCreated)!=""? dateCreated:  JsonVariant(); // timestamp for buffering
@@ -592,6 +1120,8 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
     sensorData.rainLevel=NAN;
     sensorData.waterLevel=NAN;
     sensorData.wind=NAN;
+    sensorData.ec=NAN;
+    sensorData.weight=NAN;
 
     switch (deviceConfig.configSensor.sensorBattery)
     {
@@ -621,6 +1151,48 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
         break;
     case SensorTypeIds::Bme280:
         sensor_BME280_temp();
+        break;
+    case SensorTypeIds::Max31855:
+        sensor_MAX31855_temp();
+        break;
+    case SensorTypeIds::Max31856:
+        sensor_MAX31856_temp();
+        break;
+    case SensorTypeIds::Max31865:
+        sensor_MAX31865_temp();
+        break;
+    case SensorTypeIds::Mlx90614:
+        sensor_MLX90614_temp();
+        break;
+    case SensorTypeIds::Mcp9808:
+        sensor_MCP9808_temp();
+        break;
+    case SensorTypeIds::Aht:
+        sensor_AHT_temp();
+        break;
+    case SensorTypeIds::Am2320:
+        sensor_AM2320_temp();
+        break;
+    case SensorTypeIds::Htu21Df:
+        sensor_HTU21DF_temp();
+        break;
+    case SensorTypeIds::Si7021:
+        sensor_SI7021_temp();
+        break;
+    case SensorTypeIds::Sht31:
+        sensor_SHT31_temp();
+        break;
+    case SensorTypeIds::Sht4x:
+        sensor_SHT4x_temp();
+        break;
+    case SensorTypeIds::Shtc3:
+        sensor_SHTC3_temp();
+        break;
+    case SensorTypeIds::Bme680:
+        sensor_BME680_temp();
+        break;
+    case SensorTypeIds::Dps310:
+        sensor_DPS310_temp();
         break;
     default:
         break;
@@ -664,10 +1236,44 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
         break;
     }
 
+    switch (deviceConfig.configSensor.sensorHumid)
+    {
+    case SensorTypeIds::Aht:
+        sensor_AHT_humid();
+        break;
+    case SensorTypeIds::Am2320:
+        sensor_AM2320_humid();
+        break;
+    case SensorTypeIds::Htu21Df:
+        sensor_HTU21DF_humid();
+        break;
+    case SensorTypeIds::Si7021:
+        sensor_SI7021_humid();
+        break;
+    case SensorTypeIds::Sht31:
+        sensor_SHT31_humid();
+        break;
+    case SensorTypeIds::Sht4x:
+        sensor_SHT4x_humid();
+        break;
+    case SensorTypeIds::Shtc3:
+        sensor_SHTC3_humid();
+        break;
+    case SensorTypeIds::Bme680:
+        sensor_BME680_humid();
+        break;
+
+    default:
+        break;
+    }
+
     switch (deviceConfig.configSensor.sensorMoist)
     {
     case SensorTypeIds::AnalogMoisture:
         sensor_analog_moist();
+        break;
+    case SensorTypeIds::ChirpSoilMoisture:
+        sensor_Chirp_moist();
         break;
 
     default:
@@ -679,6 +1285,24 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
     case SensorTypeIds::Bh1750:
         sensor_BH1750_lux();
         break;
+    case SensorTypeIds::Tsl2561:
+        sensor_TSL2561_lux();
+        break;
+    case SensorTypeIds::Tsl2591:
+        sensor_TSL2591_lux();
+        break;
+    case SensorTypeIds::Si1145:
+        sensor_SI1145_lux();
+        break;
+    case SensorTypeIds::Ltr390:
+        sensor_LTR390_lux();
+        break;
+    case SensorTypeIds::Veml7700:
+        sensor_VEML7700_lux();
+        break;
+    case SensorTypeIds::As7341:
+        sensor_AS7341_lux();
+        break;
 
     default:
         break;
@@ -688,6 +1312,15 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
     {
     case SensorTypeIds::Ccs811:
         sensor_CCS811_co2();
+        break;
+    case SensorTypeIds::Scd30:
+        sensor_SCD30_co2();
+        break;
+    case SensorTypeIds::Scd4x:
+        sensor_SCD4x_co2();
+        break;
+    case SensorTypeIds::Mhz19:
+        sensor_MHZ19_co2();
         break;
 
     default:
@@ -727,6 +1360,12 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
     case SensorTypeIds::Bme280:
         sensor_BME280_pres();
         break;
+    case SensorTypeIds::Bme680:
+        sensor_BME680_pres();
+        break;
+    case SensorTypeIds::Dps310:
+        sensor_DPS310_pres();
+        break;
 
     default:
         break;
@@ -734,7 +1373,34 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
 
     switch (deviceConfig.configSensor.sensorPH)
     {
-    // No SensorTypeIds constant exists yet for a real pH model - stays unreachable, same convention as every other sensor type here, until one is assigned.
+    // Roadmap #416 - closes #202's pH gap for these two concrete, chosen models (generic/unspecified pH probes still stay unimplemented per #202).
+    case SensorTypeIds::EzoPh:
+        sensor_EzoPH_ph();
+        break;
+    case SensorTypeIds::AnyleafPh:
+        sensor_AnyleafPH_ph();
+        break;
+
+    default:
+        break;
+    }
+
+    switch (deviceConfig.configSensor.sensorEc)
+    {
+    case SensorTypeIds::Ads1115Ec:
+        sensor_ADS1115_ec();
+        break;
+
+    default:
+        break;
+    }
+
+    switch (deviceConfig.configSensor.sensorWeight)
+    {
+    case SensorTypeIds::Hx711:
+        sensor_HX711_weight();
+        break;
+
     default:
         break;
     }

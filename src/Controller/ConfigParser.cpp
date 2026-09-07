@@ -248,6 +248,11 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     currentConfig.configSensor.sensorRainLevel = deviceConfigSensor["sensorRainLevel"];
     currentConfig.configSensor.sensorWaterLevel = deviceConfigSensor["sensorWaterLevel"];
     currentConfig.configSensor.sensorWind = deviceConfigSensor["sensorWind"];
+    currentConfig.configSensor.sensorEc = deviceConfigSensor["sensorEc"];
+    currentConfig.configSensor.sensorWeight = deviceConfigSensor["sensorWeight"];
+    currentConfig.configSensor.weightCalibrationFactor = deviceConfigSensor["weightCalibrationFactor"] | currentConfig.configSensor.weightCalibrationFactor;
+    currentConfig.configSensor.ecCalibrationSlope = deviceConfigSensor["ecCalibrationSlope"] | currentConfig.configSensor.ecCalibrationSlope;
+    currentConfig.configSensor.ecCalibrationOffset = deviceConfigSensor["ecCalibrationOffset"] | currentConfig.configSensor.ecCalibrationOffset;
   }
 
   if (currentConfig.deviceControllerEnabled)

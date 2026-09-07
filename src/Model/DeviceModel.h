@@ -74,6 +74,13 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
+    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
+    int MAX31855_CS=0; //UNDEFINED
+    int MAX31856_CS=0; //UNDEFINED
+    int MAX31865_CS=0; //UNDEFINED
+    int HX711_DOUT=0; //UNDEFINED
+    int HX711_SCK=0; //UNDEFINED
+
     int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
 #elif defined(AGRUMY_KIT_ESP32S3_RELAY6CH)
     // Not physically verified against real hardware (confirm before first field deploy) - direct GPIO, same digitalWrite/pinMode model as esp32dev/esp32s3usbotg, no I2C expander on this kit.
@@ -93,6 +100,13 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=0; //UNDEFINED
     int BATTERY_ADC=0; //UNDEFINED
 
+    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
+    int MAX31855_CS=0; //UNDEFINED
+    int MAX31856_CS=0; //UNDEFINED
+    int MAX31865_CS=0; //UNDEFINED
+    int HX711_DOUT=0; //UNDEFINED
+    int HX711_SCK=0; //UNDEFINED
+
     int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
 #else
     int POWER_RAIL_PRIMARY=2;
@@ -110,6 +124,13 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int DEPTH_TX=12;
     int PH=33;
     int BATTERY_ADC=36;
+
+    // Roadmap #416 - not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as elsewhere in this struct.
+    int MAX31855_CS=0; //UNDEFINED
+    int MAX31856_CS=0; //UNDEFINED
+    int MAX31865_CS=0; //UNDEFINED
+    int HX711_DOUT=0; //UNDEFINED
+    int HX711_SCK=0; //UNDEFINED
 
     int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
 #endif
@@ -185,6 +206,12 @@ struct ConfigSensor
     int sensorRainLevel;
     int sensorWaterLevel;
     int sensorWind;
+    int sensorEc;     // Roadmap #416 - electrical conductivity (ADS1115Ec)
+    int sensorWeight; // Roadmap #416 - load cell (HX711)
+    double weightCalibrationFactor = 1.0; // HX711 set_scale() divisor - raw counts per real-world unit, calibrated per install
+    // No universal analog-EC-probe formula exists (same reason #202 left Wind/pH/rainLevel unimplemented) - identity default (1.0/0.0) reports raw millivolts until a real install calibrates against known-EC reference solutions, same convention as batteryDividerR1/R2 above.
+    double ecCalibrationSlope = 1.0;
+    double ecCalibrationOffset = 0.0;
 };
 
 #include "../Logic/ConditionTree.h"
@@ -350,6 +377,8 @@ struct SensorData
     double rainLevel = NAN;
     double waterLevel = NAN;
     double wind = NAN;
+    double ec = NAN;     // Roadmap #416
+    double weight = NAN; // Roadmap #416
     String dateCreated;
     EventLog eventlog;
 };

@@ -42,6 +42,51 @@ private:
     void sensor_analog_waterLevel(); // SensorTypeIds::AnalogWaterLevel
     void sensor_rainLevel(); // unavailable
 
+    // Roadmap #416 - extended catalog, real wiring of #415's flash-cost-only drivers.
+    void sensor_MAX31855_temp();   // SensorTypeIds::Max31855
+    void sensor_MAX31856_temp();   // SensorTypeIds::Max31856
+    void sensor_MAX31865_temp();   // SensorTypeIds::Max31865
+    void sensor_MLX90614_temp();   // SensorTypeIds::Mlx90614
+    void sensor_MCP9808_temp();    // SensorTypeIds::Mcp9808
+    void sensor_AHT_temp();        // SensorTypeIds::Aht
+    void sensor_AHT_humid();       // SensorTypeIds::Aht
+    void sensor_AM2320_temp();     // SensorTypeIds::Am2320
+    void sensor_AM2320_humid();    // SensorTypeIds::Am2320
+    void sensor_HTU21DF_temp();    // SensorTypeIds::Htu21Df
+    void sensor_HTU21DF_humid();   // SensorTypeIds::Htu21Df
+    void sensor_SI7021_temp();     // SensorTypeIds::Si7021
+    void sensor_SI7021_humid();    // SensorTypeIds::Si7021
+    void sensor_SHT31_temp();      // SensorTypeIds::Sht31
+    void sensor_SHT31_humid();     // SensorTypeIds::Sht31
+    void sensor_SHT4x_temp();      // SensorTypeIds::Sht4x
+    void sensor_SHT4x_humid();     // SensorTypeIds::Sht4x
+    void sensor_SHTC3_temp();      // SensorTypeIds::Shtc3
+    void sensor_SHTC3_humid();     // SensorTypeIds::Shtc3
+    void sensor_BME680_temp();     // SensorTypeIds::Bme680
+    void sensor_BME680_humid();    // SensorTypeIds::Bme680
+    void sensor_BME680_pres();     // SensorTypeIds::Bme680
+    void sensor_DPS310_temp();     // SensorTypeIds::Dps310
+    void sensor_DPS310_pres();     // SensorTypeIds::Dps310
+    void sensor_SCD30_co2();       // SensorTypeIds::Scd30
+    void sensor_SCD4x_co2();       // SensorTypeIds::Scd4x
+    void sensor_MHZ19_co2();       // SensorTypeIds::Mhz19
+    void sensor_Chirp_moist();     // SensorTypeIds::ChirpSoilMoisture
+    void sensor_EzoPH_ph();        // SensorTypeIds::EzoPh
+    void sensor_AnyleafPH_ph();    // SensorTypeIds::AnyleafPh
+    void sensor_ADS1115_ec();      // SensorTypeIds::Ads1115Ec
+    void sensor_TSL2561_lux();     // SensorTypeIds::Tsl2561
+    void sensor_TSL2591_lux();     // SensorTypeIds::Tsl2591
+    void sensor_SI1145_lux();      // SensorTypeIds::Si1145
+    void sensor_LTR390_lux();      // SensorTypeIds::Ltr390
+    void sensor_VEML7700_lux();    // SensorTypeIds::Veml7700
+    void sensor_AS7341_lux();      // SensorTypeIds::As7341
+    void sensor_HX711_weight();    // SensorTypeIds::Hx711
+
+    // Shared print/store tail for the #416 temp/humidity/pressure sensors above - same role as reportTemperature()/reportPressure(), separate so an unavailable reading (isnan) is never stored as a real 0.
+    void reportHumidity(double percent);
+    void reportEc(double milliSiemensPerCm);
+    void reportWeight(double units);
+
     // Shared print/store tail for the DHT11/DHT22, BMP180/BMP280 and CCS811 co2/tvoc pairs - only the read call differs per library.
     void reportDHTTemperature(sensors_event_t &event, const char *label);
     void reportDHTHumidity(sensors_event_t &event, const char *label);
