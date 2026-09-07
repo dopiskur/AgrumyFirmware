@@ -25,6 +25,8 @@ jobs:
           python-version: '3.x'
       - run: pip install --upgrade platformio
       - run: pio run -e ${{ matrix.environment }}
+      # medium/high only - low is cppcheck's cross-TU-blind "unused function" noise, not real defects.
+      - run: pio check -e ${{ matrix.environment }} --severity=medium --fail-on-defect=medium --skip-packages
 
   # Roadmap #19/#95: native (host-based) unit tests for the pure relay-decision logic
   # (src/Logic/RelayLogic.*) - a separate job, not a third matrix entry above, because it runs
