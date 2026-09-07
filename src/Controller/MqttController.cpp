@@ -71,6 +71,14 @@ namespace
             return;
         }
 
+        if (actionType == COMMAND_FORCE_CONFIG_SYNC)
+        {
+            // This action type's whole job is refreshing the cached deviceConfig used everywhere else in this switch - acting on it here would just see the same stale data (see ServiceController's own "config already current" case). Polling now instead gets real, current config, and the still-Pending command gets acked/executed normally as part of that same poll's response.
+            Serial.println("[Mqtt] ForceConfigSync received via persistent channel, polling for fresh config now");
+            service.apiConfig(deviceConfig, serviceRequest, device);
+            return;
+        }
+
         deviceConfig.pendingCommand.present = true;
         deviceConfig.pendingCommand.idDeviceCommand = idDeviceCommand;
         deviceConfig.pendingCommand.actionType = actionType;
