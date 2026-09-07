@@ -6,6 +6,7 @@
 #include "NTPClient.h"
 #include "ServiceController.h"
 #include "DeviceController.h"
+#include "StorageController.h"
 #include "ConfigParser.h"
 #include "../Logic/DiscoveryLogic.h"
 #include "../Logic/HttpDateLogic.h"
@@ -374,9 +375,9 @@ bool ServiceController::provisionDiscoveredDevice(const String& payloadJson)
     // Server's own current host, not this scanning device's own (possibly stale) deviceConfig.servicePoint - falls back to it only for a command queued before the server started sending ServicePoint.
     String provisionedServicePoint = payload["ServicePoint"] | deviceConfig.servicePoint;
 
-    // Read back BEFORE disconnecting - WiFi.SSID()/psk() report the currently connected STA credentials on ESP32.
-    String ownSsid = WiFi.SSID();
-    String ownPsk = WiFi.psk();
+    // From NVS, not WiFi.SSID()/psk() (roadmap #396(8)) - those only report the currently connected network, blank if this device happens to not be connected right now.
+    String ownSsid, ownPsk;
+    StorageController::loadWifiCredentialsBackup(ownSsid, ownPsk);
 
     WiFi.disconnect();
     String targetSsid = "Agrumy_" + discoveredApMac;
@@ -454,9 +455,9 @@ bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequ
         return false;
     }
 
-    // Read back BEFORE disconnecting - WiFi.SSID()/psk() report the currently connected STA credentials on ESP32.
-    String oldSsid = WiFi.SSID();
-    String oldPsk = WiFi.psk();
+    // From NVS, not WiFi.SSID()/psk() (roadmap #396(8)) - those only report the currently connected network, blank if this device happens to not be connected right now.
+    String oldSsid, oldPsk;
+    StorageController::loadWifiCredentialsBackup(oldSsid, oldPsk);
 
     const unsigned long connectTimeoutMs = 15000;
     bool verified = false;
@@ -486,6 +487,7 @@ bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequ
         // Same call again now that persistence is back on, so the now-proven network is the one actually written to flash.
         WiFi.begin(newSsid.c_str(), newPassword.c_str());
         waitForWifiConnect(connectTimeoutMs);
+        StorageController::saveWifiCredentialsBackup(newSsid, newPassword);
         return true;
     }
 

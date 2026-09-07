@@ -245,7 +245,11 @@ void DeviceController::initializeWifi()
   WiFiManager wifiManager;
   // A router still rebooting (post-outage) at device boot must not block setup() forever - 120s times out the portal so the device falls through to loop() on cached config and retries WiFi in the background instead of freezing releys at their power-on state indefinitely.
   wifiManager.setConfigPortalTimeout(120);
-  wifiManager.autoConnect();
+  if (wifiManager.autoConnect())
+  {
+    // A verified-good connection, right now - the actual source of truth ServiceController's WiFi-switch rollback reads from (roadmap #396(8)), since WiFi.SSID()/psk() alone go blank whenever the device isn't currently connected.
+    StorageController::saveWifiCredentialsBackup(WiFi.SSID(), WiFi.psk());
+  }
 }
 
 void DeviceController::initializeDevice()

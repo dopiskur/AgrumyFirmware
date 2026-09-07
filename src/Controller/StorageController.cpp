@@ -8,6 +8,9 @@
 
 static const char *REGISTRATION_BACKUP_NAMESPACE = "agrumy";
 static const char *REGISTRATION_BACKUP_KEY = "devReg";
+static const char *WIFI_BACKUP_NAMESPACE = "agrumywifi";
+static const char *WIFI_BACKUP_SSID_KEY = "ssid";
+static const char *WIFI_BACKUP_PASS_KEY = "pass";
 
 // Return value tells the caller whether data actually reached disk, not just whether it was logged.
 bool StorageController::saveFile(String data, String filename)
@@ -235,6 +238,83 @@ String StorageController::oldestBufferedSensorFile()
   return best.isEmpty() ? String() : "buffer/" + best;
 }
 
+// Same shape as bufferSensorDataToDisk()/oldestBufferedSensorFile(), separate /relaybuffer directory (roadmap #396(7)) - a relayed LoRa uplink is a different payload/endpoint than this device's own SensorData, mixing them into /buffer would misroute relayed rows through the sensor-data flush path.
+bool StorageController::bufferRelayUplinkToDisk(String payloadJson)
+{
+  size_t total = LittleFS.totalBytes();
+  size_t used = LittleFS.usedBytes();
+  if (total == 0 || used * 100 >= total * 70)
+  {
+    Serial.printf("[Device] Relay buffer DISCARDED: LittleFS %u/%u bytes (>= 70%% full) - deliberate data loss by design\n", (unsigned)used, (unsigned)total);
+    return false;
+  }
+
+  static int nextIndex = -1;
+  if (nextIndex < 0)
+  {
+    LittleFS.mkdir("/relaybuffer");
+    nextIndex = 1;
+    File dir = LittleFS.open("/relaybuffer");
+    File entry;
+    while (dir && (entry = dir.openNextFile()))
+    {
+      int n = String(entry.name()).toInt();
+      entry.close();
+      if (n >= nextIndex)
+      {
+        nextIndex = n + 1;
+      }
+    }
+  }
+
+  char name[28];
+  snprintf(name, sizeof(name), "relaybuffer/%05d.json", nextIndex);
+  nextIndex++;
+  if (!saveFile(payloadJson, name))
+  {
+    Serial.printf("[Device] Relay buffer spill to /%s FAILED - uplink not persisted\n", name);
+    return false;
+  }
+
+  Serial.printf("[Device] Relay buffer spilled to /%s - LittleFS now %u/%u bytes\n", name, (unsigned)LittleFS.usedBytes(), (unsigned)total);
+  return true;
+}
+
+String StorageController::oldestBufferedRelayFile()
+{
+  if (!LittleFS.exists("/relaybuffer"))
+  {
+    return String();
+  }
+
+  File dir = LittleFS.open("/relaybuffer");
+  if (!dir || !dir.isDirectory())
+  {
+    return String();
+  }
+
+  String best;
+  File entry;
+  while ((entry = dir.openNextFile()))
+  {
+    String name = entry.name();
+    entry.close();
+    if (name.startsWith("/relaybuffer/"))
+    {
+      name = name.substring(13);
+    }
+    if (!name.endsWith(".json"))
+    {
+      continue;
+    }
+    if (best.isEmpty() || name.compareTo(best) < 0)
+    {
+      best = name;
+    }
+  }
+  return best.isEmpty() ? String() : "relaybuffer/" + best;
+}
+
 void StorageController::removeBufferedFile(String filename)
 {
   LittleFS.remove("/" + filename);
@@ -268,4 +348,33 @@ String StorageController::loadRegistrationBackup()
   String data = prefs.getString(REGISTRATION_BACKUP_KEY, "");
   prefs.end();
   return data;
+}
+
+// Roadmap #396(8) - WiFi.SSID()/WiFi.psk() report the CURRENTLY CONNECTED STA credentials, not the last-known-good ones; empty whenever the device happens to not be connected at the moment a rollback needs them. This NVS copy is the actual source of truth for "what network was this device last successfully on", written only from a state DeviceController::initializeWifi() already knows is verified-good.
+bool StorageController::saveWifiCredentialsBackup(String ssid, String password)
+{
+  Preferences prefs;
+  if (!prefs.begin(WIFI_BACKUP_NAMESPACE, false))
+  {
+    Serial.println("[Device] saveWifiCredentialsBackup: NVS open (read-write) failed");
+    return false;
+  }
+  bool ok = prefs.putString(WIFI_BACKUP_SSID_KEY, ssid) == (size_t)ssid.length()
+      && prefs.putString(WIFI_BACKUP_PASS_KEY, password) == (size_t)password.length();
+  prefs.end();
+  return ok;
+}
+
+void StorageController::loadWifiCredentialsBackup(String &ssid, String &password)
+{
+  Preferences prefs;
+  if (!prefs.begin(WIFI_BACKUP_NAMESPACE, true))
+  {
+    ssid = "";
+    password = "";
+    return; // namespace never created yet - no backup exists
+  }
+  ssid = prefs.getString(WIFI_BACKUP_SSID_KEY, "");
+  password = prefs.getString(WIFI_BACKUP_PASS_KEY, "");
+  prefs.end();
 }

@@ -1,5 +1,6 @@
 #include "Controller/LoRaGatewayRelayController.h"
 #include "Controller/ServiceController.h"
+#include "Controller/StorageController.h"
 #include "Logic/LoRaPrivateFrameLogic.h"
 #include <RadioLib.h>
 #include <ArduinoJson.h>
@@ -54,6 +55,33 @@ namespace
     const int PIN_VEXT = 36;
     SX1262 loRaGatewayRadio = new Module(PIN_CS, PIN_DIO1, PIN_RST, PIN_BUSY);
 #endif
+
+    // Disk backlog goes first, oldest file first, so the server receives uplinks in chronological order (roadmap #396(7), same pattern as SensorController::flushBufferedSensorData) - a broken-off flush means the connection is down again, so the caller's own live send this cycle is left to fail and buffer normally rather than retried here.
+    void flushBufferedRelayUplinks(ServiceController &service, ServiceRequest serviceRequest)
+    {
+        String filename = StorageController::oldestBufferedRelayFile();
+        while (!filename.isEmpty())
+        {
+            String payloadJson = StorageController::loadFile(filename);
+            JsonDocument payload;
+            if (payloadJson.isEmpty() || deserializeJson(payload, payloadJson) != DeserializationError::Ok)
+            {
+                Serial.println("[LoRaGatewayRelay] Buffered file /" + filename + " unreadable - dropping it");
+                StorageController::removeBufferedFile(filename);
+            }
+            else
+            {
+                ServiceData result = service.requestPost(payload, serviceRequest);
+                if (result.eventlog.error)
+                {
+                    Serial.println("[LoRaGatewayRelay] Flush stopped at /" + filename + " - connection lost again, remaining files stay queued");
+                    return;
+                }
+                StorageController::removeBufferedFile(filename);
+            }
+            filename = StorageController::oldestBufferedRelayFile();
+        }
+    }
 }
 
 bool LoRaGatewayRelayController::begin()
@@ -109,5 +137,16 @@ void LoRaGatewayRelayController::poll(ServiceController &service, ServiceRequest
     JsonDocument body;
     body["SourceAddress"] = frame.srcAddress;
     body["Payload"] = base64Encode(frame.payload);
-    service.requestPost(body, serviceRequest);
+
+    flushBufferedRelayUplinks(service, serviceRequest);
+    ServiceData result = service.requestPost(body, serviceRequest);
+    if (result.eventlog.error)
+    {
+        String payloadJson;
+        serializeJson(body, payloadJson);
+        if (!StorageController::bufferRelayUplinkToDisk(payloadJson))
+        {
+            Serial.println("[LoRaGatewayRelay] Uplink buffer discarded - LittleFS full or write failed");
+        }
+    }
 }
