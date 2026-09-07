@@ -208,6 +208,8 @@ void MqttController::beginPersistentIfEnabled(DeviceConfig& config)
             persistentClient.setClient(persistentPlainClient);
         }
         persistentClient.setBufferSize(MQTT_BUFFER_SIZE);
+        // PubSubClient's 15s default keepalive is shorter than the ~30s gap between poll() calls in main.cpp's chunked idle wait (WDT_TIMEOUT_SECONDS/3) - the broker was killing the connection for inactivity before poll() ever ran again, silently dropping every pushed command (confirmed against a real broker+device). 120s comfortably outlasts a full sleepSeconds cycle.
+        persistentClient.setKeepAlive(120);
         persistentClient.setServer(brokerHost.c_str(), (uint16_t)brokerPort);
         persistentClient.setCallback(onCommandMessage);
         persistentClientInitialized = true;

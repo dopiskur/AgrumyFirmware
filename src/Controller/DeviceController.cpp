@@ -267,6 +267,8 @@ void DeviceController::initializeDevice()
   WiFiManagerParameter mqttPort("mqttPort", "MQTT Port (1883, 8883=TLS)", mqttRegistration.brokerPort, 6);
   WiFiManagerParameter mqttUser("mqttUser", "MQTT Username (optional)", mqttRegistration.username, 64);
   WiFiManagerParameter mqttPass("mqttPass", "MQTT Password (optional)", mqttRegistration.password, 64);
+  // Checkbox custom-HTML param (tzapu/WiFiManager convention) - "T" back means checked, unset means unchecked; only meaningful when brokerHost above is non-blank.
+  WiFiManagerParameter mqttPersistent("mqttPersistent", "Persistent command channel (mains-powered only)", "T", 2, "type=\"checkbox\"", WFM_LABEL_AFTER);
 
   wifiManager.addParameter(&userLogin);
   wifiManager.addParameter(&userPin);
@@ -276,6 +278,7 @@ void DeviceController::initializeDevice()
   wifiManager.addParameter(&mqttPort);
   wifiManager.addParameter(&mqttUser);
   wifiManager.addParameter(&mqttPass);
+  wifiManager.addParameter(&mqttPersistent);
 
   wifiManager.startConfigPortal(("Agrumy_" + macAddr()).c_str());
 
@@ -326,6 +329,7 @@ void DeviceController::initializeDevice()
   mqttConfigJson["brokerPort"] = strlen(mqttRegistration.brokerPort) > 0 ? atoi(mqttRegistration.brokerPort) : 1883;
   mqttConfigJson["username"] = mqttRegistration.username;
   mqttConfigJson["password"] = mqttRegistration.password;
+  mqttConfigJson["persistentCommandChannel"] = strcmp(mqttPersistent.getValue(), "T") == 0;
   String mqttData;
   serializeJsonPretty(mqttConfigJson, mqttData);
   Serial.println("[Device] Saving MQTT config: broker=" + String(mqttRegistration.brokerHost) + ":" + String(mqttRegistration.brokerPort)); // password never printed, even masked
