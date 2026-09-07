@@ -1,6 +1,5 @@
 #include "Arduino.h"
 #include <WiFi.h>
-#include <EEPROM.h>
 #include "FS.h"
 #include "WiFiManager.h"
 
