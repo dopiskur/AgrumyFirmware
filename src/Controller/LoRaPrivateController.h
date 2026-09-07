@@ -11,8 +11,9 @@
 /// paired with a Gateway running GatewayProfile.LoRaPrivateProtocol and its radio-frontend board (see
 /// Controller/LoRaGatewayBridgeController). No ADR: the spreading factor is a fixed config value this
 /// node picks itself, not negotiated with a network server. Full cycle including a real two-radio
-/// uplink to a gateway bridge confirmed on real Heltec WiFi LoRa 32 V3 hardware (2026-09-06) -
-/// receiving a real downlink back is still unverified.
+/// uplink to a gateway bridge confirmed on real Heltec WiFi LoRa 32 V3 hardware (2026-09-06) - that
+/// run predates this controller's AES-256-GCM payload encryption (added 2026-09-07), so it verified
+/// plaintext framing only, not the current encrypted wire format; a real downlink is still unverified.
 class LoRaPrivateController
 {
 public:
