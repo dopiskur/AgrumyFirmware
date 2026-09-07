@@ -1,4 +1,5 @@
 #include "RelayLogic.h"
+#include <cmath>
 
 // 2023-11-14 UTC, safely before any real deployment - mirrors ActuatorController.cpp's MIN_PLAUSIBLE_EPOCH, duplicated (not #included) to keep this file Arduino-independent for native tests.
 static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
@@ -79,6 +80,21 @@ bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch
     default:
         return false; // unrecognized mode - ConfigParser already skips these at parse time, belt and suspenders
     }
+}
+
+bool waterPumpBlockedByLowTank(double waterLevel, int rawEmpty, int rawFull, double minLevelPercent)
+{
+    if (minLevelPercent <= 0 || rawEmpty == rawFull)
+    {
+        return false; // uncalibrated - Water Valve case, no tank sensor to protect
+    }
+    if (std::isnan(waterLevel))
+    {
+        return true; // calibrated but no reading this cycle - can't verify the tank isn't dry, fail closed
+    }
+    double fraction = (waterLevel - rawEmpty) / (double)(rawFull - rawEmpty);
+    fraction = fraction < 0.0 ? 0.0 : (fraction > 1.0 ? 1.0 : fraction);
+    return (fraction * 100.0) < minLevelPercent;
 }
 
 bool foldConditions(const bool results[], const int ops[], int count)

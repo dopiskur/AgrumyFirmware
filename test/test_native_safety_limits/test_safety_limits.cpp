@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <cmath>
 #include "../../src/Logic/RelayLogic.h"
 
 void setUp(void) {}
@@ -74,6 +75,49 @@ void test_Cooldown_SecondsNegative_Disabled(void)
     TEST_ASSERT_FALSE(cooldownActive(1000001, 1000000, -1));
 }
 
+void test_DryRun_Uncalibrated_RawEmptyEqualsRawFull_NeverBlocks(void)
+{
+    // Water Valve case - no tank sensor, no protection, regardless of minLevelPercent or reading.
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(0.0, 100, 100, 50.0));
+}
+
+void test_DryRun_MinLevelZeroOrNegative_Disabled(void)
+{
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(50.0, 0, 100, 0.0));
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(50.0, 0, 100, -5.0));
+}
+
+void test_DryRun_Calibrated_BelowMinLevel_Blocks(void)
+{
+    // rawEmpty=0, rawFull=100 -> waterLevel IS the fill percent, keeps the test trivial.
+    TEST_ASSERT_TRUE(waterPumpBlockedByLowTank(10.0, 0, 100, 20.0));
+}
+
+void test_DryRun_Calibrated_AtOrAboveMinLevel_NotBlocked(void)
+{
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(20.0, 0, 100, 20.0));
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(80.0, 0, 100, 20.0));
+}
+
+void test_DryRun_ReadingBeyondCalibration_Clamped(void)
+{
+    // Below rawEmpty/above rawFull clamps to 0%/100% rather than an out-of-range fraction.
+    TEST_ASSERT_TRUE(waterPumpBlockedByLowTank(-50.0, 0, 100, 20.0));
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(500.0, 0, 100, 20.0));
+}
+
+void test_DryRun_NaNReading_Calibrated_FailsClosed(void)
+{
+    // A calibrated zone with no reading this cycle can't verify the tank isn't dry - block it, same fail-closed
+    // convention as WaterPump's own Threshold NaN handling.
+    TEST_ASSERT_TRUE(waterPumpBlockedByLowTank(NAN, 0, 100, 20.0));
+}
+
+void test_DryRun_NaNReading_Uncalibrated_StillNotBlocked(void)
+{
+    TEST_ASSERT_FALSE(waterPumpBlockedByLowTank(NAN, 100, 100, 20.0));
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
@@ -90,5 +134,12 @@ int main(int argc, char **argv)
     RUN_TEST(test_Cooldown_WellPastElapsed_NotActive);
     RUN_TEST(test_Cooldown_SecondsZero_Disabled);
     RUN_TEST(test_Cooldown_SecondsNegative_Disabled);
+    RUN_TEST(test_DryRun_Uncalibrated_RawEmptyEqualsRawFull_NeverBlocks);
+    RUN_TEST(test_DryRun_MinLevelZeroOrNegative_Disabled);
+    RUN_TEST(test_DryRun_Calibrated_BelowMinLevel_Blocks);
+    RUN_TEST(test_DryRun_Calibrated_AtOrAboveMinLevel_NotBlocked);
+    RUN_TEST(test_DryRun_ReadingBeyondCalibration_Clamped);
+    RUN_TEST(test_DryRun_NaNReading_Calibrated_FailsClosed);
+    RUN_TEST(test_DryRun_NaNReading_Uncalibrated_StillNotBlocked);
     return UNITY_END();
 }

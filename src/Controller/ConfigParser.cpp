@@ -257,6 +257,9 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 
     currentConfig.configController.waterPumpMaxRunSeconds = deviceConfigController["waterPumpMaxRunSeconds"] | currentConfig.configController.waterPumpMaxRunSeconds;
     currentConfig.configController.waterPumpCooldownSeconds = deviceConfigController["waterPumpCooldownSeconds"] | currentConfig.configController.waterPumpCooldownSeconds;
+    currentConfig.configController.waterPumpMinLevel = deviceConfigController["waterPumpMinLevel"] | currentConfig.configController.waterPumpMinLevel;
+    currentConfig.configController.waterLevelRawEmpty = deviceConfigController["waterLevelRawEmpty"] | currentConfig.configController.waterLevelRawEmpty;
+    currentConfig.configController.waterLevelRawFull = deviceConfigController["waterLevelRawFull"] | currentConfig.configController.waterLevelRawFull;
 
     // Falls back to the current value so an older server build can't accidentally re-arm a pump the last sync deliberately vetoed.
     currentConfig.configController.skipWaterPumpForRain = deviceConfigController["skipWaterPumpForRain"] | currentConfig.configController.skipWaterPumpForRain;

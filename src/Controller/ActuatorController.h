@@ -60,8 +60,8 @@ private:
     bool evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
                        int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const;
 
-    // The LAST word for a WaterPump-assigned physical relay slot, applied right after this function's rules are OR'd and written for this tick. slotIndex (0..MAX_RELAY_SLOTS-1) is the physical relay index, not the discovery order collectPinsForFunction gives - so each slot's history stays independent even if several relays share the WaterPump function.
-    void applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds);
+    // The LAST word for a WaterPump-assigned physical relay slot, applied right after this function's rules are OR'd and written for this tick. slotIndex (0..MAX_RELAY_SLOTS-1) is the physical relay index, not the discovery order collectPinsForFunction gives - so each slot's history stays independent even if several relays share the WaterPump function. waterLevel is this tick's raw reading, checked against the zone's tank calibration/minLevel regardless of which mode (Threshold/Interval/Schedule/Manual) turned the pump on.
+    void applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds, double waterLevel);
     void reportSafetyLimitTripped(const String &message);
 
     // const: called from driveEveryAssignedRelayOff()/forceAllRelaysOff(), both const - pendingHardwareFaultMessage is mutable accordingly.

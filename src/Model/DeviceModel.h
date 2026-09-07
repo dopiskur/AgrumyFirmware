@@ -283,6 +283,14 @@ struct ConfigController
     int waterPumpMaxRunSeconds = 0;
     int waterPumpCooldownSeconds = 0;
 
+    // Dry-run protection: blocks WaterPump (Interval/Schedule/Manual included, not just Threshold) whenever the tank's
+    // computed fill percent is below this. <=0, or rawEmpty==rawFull (uncalibrated - a Water Valve zone with no tank
+    // sensor), disables it entirely - same api.Utils.TankCalculator percent math the server already uses for the
+    // low-tank refill alert, just evaluated on-device instead of server-side.
+    double waterPumpMinLevel = 0;
+    int waterLevelRawEmpty = 0;
+    int waterLevelRawFull = 0;
+
     // Server-computed rain veto for WaterPump; the device just applies this flag.
     bool skipWaterPumpForRain = false;
 

@@ -156,7 +156,7 @@ bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, t
 }
 
 // Order matters: cooldown is evaluated against the OLD offSinceEpoch BEFORE anything below touches onSinceEpoch/offSinceEpoch, so an ON request arriving mid-cooldown can never reset its own clock into a permanent lockout.
-void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds)
+void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time_t epochSeconds, double waterLevel)
 {
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
     int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
@@ -167,16 +167,21 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
     int cooldownSeconds = deviceConfig.configController.waterPumpCooldownSeconds;
 
     bool blockedByCooldown = desiredState && cooldownActive(epochSeconds, waterPumpOffSinceEpoch[slotIndex], cooldownSeconds);
+    // Catches Interval/Schedule/Manual too, not just Threshold - those modes never consult waterLevel on their own, so without this check a scheduled run would proceed on an empty tank.
+    bool blockedByLowTank = desiredState && !blockedByCooldown
+                             && waterPumpBlockedByLowTank(waterLevel, deviceConfig.configController.waterLevelRawEmpty,
+                                                           deviceConfig.configController.waterLevelRawFull,
+                                                           deviceConfig.configController.waterPumpMinLevel);
 
-    if (desiredState && !blockedByCooldown && waterPumpOnSinceEpoch[slotIndex] == 0)
+    if (desiredState && !blockedByCooldown && !blockedByLowTank && waterPumpOnSinceEpoch[slotIndex] == 0)
     {
         waterPumpOnSinceEpoch[slotIndex] = epochSeconds;
     }
 
-    bool ceilingHit = desiredState && !blockedByCooldown
+    bool ceilingHit = desiredState && !blockedByCooldown && !blockedByLowTank
                        && runTimeCeilingHit(epochSeconds, waterPumpOnSinceEpoch[slotIndex], maxRunSeconds);
 
-    bool finalState = desiredState && !blockedByCooldown && !ceilingHit;
+    bool finalState = desiredState && !blockedByCooldown && !blockedByLowTank && !ceilingHit;
 
     if (!finalState && waterPumpOnSinceEpoch[slotIndex] != 0)
     {
@@ -195,6 +200,10 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
         else if (blockedByCooldown)
         {
             reportSafetyLimitTripped("WaterPump cooldown active, restart blocked");
+        }
+        else if (blockedByLowTank)
+        {
+            reportSafetyLimitTripped("WaterPump blocked - tank below minimum level (dry-run protection)");
         }
     }
 }
@@ -419,7 +428,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     {
         if ((RelayFunctionType)configuredType[i] == RelayFunctionType::WaterPump && relayPin[i] >= 0)
         {
-            applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds);
+            applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds, sensorData.waterLevel);
         }
     }
 
