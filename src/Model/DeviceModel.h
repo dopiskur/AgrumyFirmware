@@ -390,6 +390,8 @@ struct ServiceData
     EventLog eventlog;
     // Seconds from a 429 response's Retry-After header; -1 when the response wasn't a 429 or carried no such header.
     int retryAfterSeconds = -1;
+    // Server clock from the response's Date header, any successful HTTP response; 0 when absent/unparseable, same sentinel as DeviceConfig::serverUtcEpoch.
+    long dateHeaderEpoch = 0;
 };
 
 

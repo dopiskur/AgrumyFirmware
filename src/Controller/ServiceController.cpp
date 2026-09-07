@@ -8,6 +8,7 @@
 #include "DeviceController.h"
 #include "ConfigParser.h"
 #include "../Logic/DiscoveryLogic.h"
+#include "../Logic/HttpDateLogic.h"
 
 #include <ArduinoJson.h>
 
@@ -85,8 +86,8 @@ ServiceData ServiceController::requestPost(JsonDocument jsonBuffer, ServiceReque
         http.addHeader("apiKey", service.header.apiKey);
         http.addHeader("Authorization", apiAuth);
         // Only headers named here reach header() below - HTTPClient doesn't retain arbitrary response headers by default.
-        static const char *collectedHeaders[] = {"Retry-After"};
-        http.collectHeaders(collectedHeaders, 1);
+        static const char *collectedHeaders[] = {"Retry-After", "Date"};
+        http.collectHeaders(collectedHeaders, 2);
 
         int httpCode = http.POST(jsonRequest);
 
@@ -96,6 +97,8 @@ ServiceData ServiceController::requestPost(JsonDocument jsonBuffer, ServiceReque
             Serial.print("[HTTP] Code: ");
             Serial.println(httpCode);
             serviceData.eventlog.errorCode = httpCode;
+            // Every real response carries the server's clock, not just a full config body - lets apiConfig() feed the NTP fallback on a bare heartbeat 200 too.
+            serviceData.dateHeaderEpoch = httpDateToEpochSeconds(http.header("Date").c_str());
 
             if (httpCode == 200 || httpCode == 201)
             {
@@ -570,6 +573,13 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         Serial.println("[Service] apiConfig: failed to authenticate: ");
         apiAuthenticate(deviceConfig,serviceRequest, device);
         serviceData = requestPost(payload, serviceRequest);
+    }
+
+    // Every cycle carries the server's clock via the Date header, config body or not - a device that only ever
+    // gets heartbeat 200s (nothing changed) must not wait up to 24h for a full config poll to seed its fallback.
+    if (serviceData.dateHeaderEpoch > 0)
+    {
+        device.applyServerEpochFallback((time_t)serviceData.dateHeaderEpoch);
     }
 
     // A relay under load (or the server's own rate limiter) asking us to back off, not a real failure - honor it and skip straight to the next normal cycle instead of feeding the reboot-escalation counter below.
