@@ -1,5 +1,8 @@
 #include "RelayLogic.h"
 
+// 2023-11-14 UTC, safely before any real deployment - mirrors ActuatorController.cpp's MIN_PLAUSIBLE_EPOCH, duplicated (not #included) to keep this file Arduino-independent for native tests.
+static const time_t MIN_PLAUSIBLE_EPOCH = 1700000000;
+
 bool computeIntervalState(int interval, int intervalLength, time_t epochSeconds)
 {
     if (interval <= 0)
@@ -59,6 +62,10 @@ bool cooldownActive(time_t epochSeconds, time_t offSinceEpoch, int cooldownSecon
 
 bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch, bool isCurrentlyOn, double reading, double threshold, double hysteresis, bool turnsOnAboveThreshold)
 {
+    if (epochSeconds < MIN_PLAUSIBLE_EPOCH)
+    {
+        return false; // real time not known yet - expiresAtEpoch could never be reached, so the override would otherwise never end
+    }
     if (epochSeconds >= expiresAtEpoch)
     {
         return false; // past the hard safety cap - override no longer applies this tick
