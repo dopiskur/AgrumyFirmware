@@ -220,7 +220,7 @@ struct ConfigSensor
 #include "../Logic/ConditionTree.h"
 
 
-// Roadmap #451(23) - bumped only when a config wire-format change is big enough that an old firmware silently misreading/ignoring a field would matter; ConfigParser::parse() logs (not rejects) when the server's schemaVersion is newer than this, so a stale-firmware-after-server-upgrade mismatch is visible in the serial log during OTA rollback triage instead of just "some field is mysteriously wrong".
+// Bumped only when a config wire-format change is big enough that an old firmware silently misreading/ignoring a field would matter; ConfigParser::parse() logs (not rejects) when the server's schemaVersion is newer than this, so a stale-firmware-after-server-upgrade mismatch is visible in the serial log during OTA rollback triage instead of just "some field is mysteriously wrong".
 static const int CONFIG_SCHEMA_VERSION = 1;
 
 // Beyond this cap, ConfigParser silently drops extra rules (ArduinoJson has no dynamic growth on-device).

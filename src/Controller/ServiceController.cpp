@@ -458,7 +458,7 @@ bool ServiceController::provisionDiscoveredDevice(const String& payloadJson)
     return success;
 }
 
-// Roadmap #451(22) - freeHeap alone doesn't show fragmentation (MaxAllocHeap) or a transient dip since boot (MinFreeHeap), and neither shows how close the loop task itself is to a stack overflow (StackHighWaterMark, bytes never touched - low means close). Shared by both heartbeat call sites below.
+// freeHeap alone doesn't show fragmentation (MaxAllocHeap) or a transient dip since boot (MinFreeHeap), and neither shows how close the loop task itself is to a stack overflow (StackHighWaterMark, bytes never touched - low means close). Shared by both heartbeat call sites below.
 static void addHeapDiagnostics(JsonDocument &payload)
 {
     payload["FreeHeap"] = ESP.getFreeHeap();

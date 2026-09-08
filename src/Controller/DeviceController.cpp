@@ -24,7 +24,7 @@ RTC_DATA_ATTR static int rtcRapidConfigRebootCount = 0;
 // Separate from the crash-loop counter above: unconditional (set on every config-triggered reboot, not just rapid ones), answers "did this boot follow a just-applied config" rather than "is this a suspicious streak".
 RTC_DATA_ATTR static bool rtcConfigJustAppliedPending = false;
 
-// Roadmap #451(21) - see LoopPhase's own remarks (DeviceModel.h). Survives the same panic-reboot as the two counters above.
+// See LoopPhase's own remarks (DeviceModel.h). Survives the same panic-reboot as the two counters above.
 RTC_DATA_ATTR static int rtcLastPhase = PHASE_BOOT;
 
 static const char *loopPhaseName(int phase)
