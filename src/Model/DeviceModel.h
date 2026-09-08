@@ -59,28 +59,28 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 {
 #if defined(AGRUMY_KIT_KC868_A6)
     // Not physically verified against real KC868-A6 hardware (confirm before first field deploy) - relays sit behind a PCF8574 I2C expander, so RELAY_PINS[0..5] here are PCF8574 bit indices (0-5), not GPIO numbers.
-    int POWER_RAIL_PRIMARY=0; //UNDEFINED
-    int POWER_RAIL_SECONDARY=0; //UNDEFINED
+    int POWER_RAIL_PRIMARY=-1; //UNDEFINED
+    int POWER_RAIL_SECONDARY=-1; //UNDEFINED
 
-    int STATUS_POWER=0; //UNDEFINED
-    int STATUS_SENSOR=0; //UNDEFINED
-    int STATUS_ERROR=0; //UNDEFINED
+    int STATUS_POWER=-1; //UNDEFINED
+    int STATUS_SENSOR=-1; //UNDEFINED
+    int STATUS_ERROR=-1; //UNDEFINED
 
     int DHT=32;
     int TEMPSOIL=33;
-    int MOIST=0; //UNDEFINED
-    int WaterTank=0; //UNDEFINED
-    int DEPTH_RX=0; //UNDEFINED
-    int DEPTH_TX=0; //UNDEFINED
-    int PH=0; //UNDEFINED
-    int BATTERY_ADC=0; //UNDEFINED
+    int MOIST=-1; //UNDEFINED
+    int WaterTank=-1; //UNDEFINED
+    int DEPTH_RX=-1; //UNDEFINED
+    int DEPTH_TX=-1; //UNDEFINED
+    int PH=-1; //UNDEFINED
+    int BATTERY_ADC=-1; //UNDEFINED
 
-    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
-    int MAX31855_CS=0; //UNDEFINED
-    int MAX31856_CS=0; //UNDEFINED
-    int MAX31865_CS=0; //UNDEFINED
-    int HX711_DOUT=0; //UNDEFINED
-    int HX711_SCK=0; //UNDEFINED
+    // Not physically wired on any board yet, same "-1 UNDEFINED until a real install assigns it" convention as the pins above.
+    int MAX31855_CS=-1; //UNDEFINED
+    int MAX31856_CS=-1; //UNDEFINED
+    int MAX31865_CS=-1; //UNDEFINED
+    int HX711_DOUT=-1; //UNDEFINED
+    int HX711_SCK=-1; //UNDEFINED
 
     int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
 
@@ -88,28 +88,28 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PWM_PINS[4] = {-1, -1, -1, -1};
 #elif defined(AGRUMY_KIT_ESP32S3_RELAY6CH)
     // Not physically verified against real hardware (confirm before first field deploy) - direct GPIO, same digitalWrite/pinMode model as esp32dev/esp32s3usbotg, no I2C expander on this kit.
-    int POWER_RAIL_PRIMARY=0; //UNDEFINED
-    int POWER_RAIL_SECONDARY=0; //UNDEFINED
+    int POWER_RAIL_PRIMARY=-1; //UNDEFINED
+    int POWER_RAIL_SECONDARY=-1; //UNDEFINED
 
-    int STATUS_POWER=0; //UNDEFINED
-    int STATUS_SENSOR=0; //UNDEFINED
-    int STATUS_ERROR=0; //UNDEFINED
+    int STATUS_POWER=-1; //UNDEFINED
+    int STATUS_SENSOR=-1; //UNDEFINED
+    int STATUS_ERROR=-1; //UNDEFINED
 
-    int DHT=0; //UNDEFINED
-    int TEMPSOIL=0; //UNDEFINED
-    int MOIST=0; //UNDEFINED
-    int WaterTank=0; //UNDEFINED
-    int DEPTH_RX=0; //UNDEFINED
-    int DEPTH_TX=0; //UNDEFINED
-    int PH=0; //UNDEFINED
-    int BATTERY_ADC=0; //UNDEFINED
+    int DHT=-1; //UNDEFINED
+    int TEMPSOIL=-1; //UNDEFINED
+    int MOIST=-1; //UNDEFINED
+    int WaterTank=-1; //UNDEFINED
+    int DEPTH_RX=-1; //UNDEFINED
+    int DEPTH_TX=-1; //UNDEFINED
+    int PH=-1; //UNDEFINED
+    int BATTERY_ADC=-1; //UNDEFINED
 
-    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as the pins above.
-    int MAX31855_CS=0; //UNDEFINED
-    int MAX31856_CS=0; //UNDEFINED
-    int MAX31865_CS=0; //UNDEFINED
-    int HX711_DOUT=0; //UNDEFINED
-    int HX711_SCK=0; //UNDEFINED
+    // Not physically wired on any board yet, same "-1 UNDEFINED until a real install assigns it" convention as the pins above.
+    int MAX31855_CS=-1; //UNDEFINED
+    int MAX31856_CS=-1; //UNDEFINED
+    int MAX31865_CS=-1; //UNDEFINED
+    int HX711_DOUT=-1; //UNDEFINED
+    int HX711_SCK=-1; //UNDEFINED
 
     int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
 
@@ -132,12 +132,12 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int PH=33;
     int BATTERY_ADC=36;
 
-    // Not physically wired on any board yet, same "0 UNDEFINED until a real install assigns it" convention as elsewhere in this struct.
-    int MAX31855_CS=0; //UNDEFINED
-    int MAX31856_CS=0; //UNDEFINED
-    int MAX31865_CS=0; //UNDEFINED
-    int HX711_DOUT=0; //UNDEFINED
-    int HX711_SCK=0; //UNDEFINED
+    // Not physically wired on any board yet, same "-1 UNDEFINED until a real install assigns it" convention as elsewhere in this struct.
+    int MAX31855_CS=-1; //UNDEFINED
+    int MAX31856_CS=-1; //UNDEFINED
+    int MAX31865_CS=-1; //UNDEFINED
+    int HX711_DOUT=-1; //UNDEFINED
+    int HX711_SCK=-1; //UNDEFINED
 
     int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
 
@@ -219,6 +219,7 @@ struct ConfigSensor
     int sensorEc;     // electrical conductivity (ADS1115Ec)
     int sensorWeight; // load cell (HX711)
     double weightCalibrationFactor = 1.0; // HX711 set_scale() divisor - raw counts per real-world unit, calibrated per install
+    long weightTareOffset = 0; // HX711 set_offset() raw reading with the scale empty, applied every boot instead of tare()ing whatever's currently on the scale
     // No universal analog-EC-probe formula exists (same reason Wind/pH/rainLevel stayed unimplemented for so long) - identity default (1.0/0.0) reports raw millivolts until a real install calibrates against known-EC reference solutions, same convention as batteryDividerR1/R2 above.
     double ecCalibrationSlope = 1.0;
     double ecCalibrationOffset = 0.0;

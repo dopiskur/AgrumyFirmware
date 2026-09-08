@@ -285,7 +285,7 @@ void SensorController::setupSensor()
         if (hx711Status)
         {
             hx711Scale.set_scale(deviceConfig.configSensor.weightCalibrationFactor);
-            hx711Scale.tare();
+            hx711Scale.set_offset(deviceConfig.configSensor.weightTareOffset);
         }
     }
 

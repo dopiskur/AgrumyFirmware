@@ -251,6 +251,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     currentConfig.configSensor.sensorEc = deviceConfigSensor["sensorEc"];
     currentConfig.configSensor.sensorWeight = deviceConfigSensor["sensorWeight"];
     currentConfig.configSensor.weightCalibrationFactor = deviceConfigSensor["weightCalibrationFactor"] | currentConfig.configSensor.weightCalibrationFactor;
+    currentConfig.configSensor.weightTareOffset = deviceConfigSensor["weightTareOffset"] | currentConfig.configSensor.weightTareOffset;
     currentConfig.configSensor.ecCalibrationSlope = deviceConfigSensor["ecCalibrationSlope"] | currentConfig.configSensor.ecCalibrationSlope;
     currentConfig.configSensor.ecCalibrationOffset = deviceConfigSensor["ecCalibrationOffset"] | currentConfig.configSensor.ecCalibrationOffset;
   }
