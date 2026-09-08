@@ -292,6 +292,118 @@ void SensorController::setupSensor()
     delay(5000);
 }
 
+namespace
+{
+    struct I2CCandidate
+    {
+        uint8_t address;
+        int sensorTypeId;
+    };
+
+    // Address as this codebase's own drivers actually probe it (fixed or default) - not every alt address a chip's datasheet allows, only what setupSensor() above already begins with.
+    const I2CCandidate i2cCandidates[] = {
+        {0x10, SensorTypeIds::Veml7700},
+        {0x18, SensorTypeIds::Mcp9808},
+        {0x20, SensorTypeIds::ChirpSoilMoisture},
+        {0x23, SensorTypeIds::Bh1750},
+        {0x29, SensorTypeIds::Tsl2591},
+        {0x36, SensorTypeIds::Max17048},
+        {0x38, SensorTypeIds::Aht},
+        {0x39, SensorTypeIds::Tsl2561},
+        {0x39, SensorTypeIds::As7341},
+        {0x40, SensorTypeIds::Htu21Df},
+        {0x40, SensorTypeIds::Si7021},
+        {0x44, SensorTypeIds::Sht31},
+        {0x44, SensorTypeIds::Sht4x},
+        {0x48, SensorTypeIds::Ads1115Ec},
+        {0x53, SensorTypeIds::Ltr390},
+        {0x5A, SensorTypeIds::Ccs811},
+        {0x5A, SensorTypeIds::Mlx90614},
+        {0x5C, SensorTypeIds::Am2320},
+        {0x60, SensorTypeIds::Si1145},
+        {0x61, SensorTypeIds::Scd30},
+        {0x62, SensorTypeIds::Scd4x},
+        {0x70, SensorTypeIds::Shtc3},
+        {0x76, SensorTypeIds::Bmp280},
+        {0x76, SensorTypeIds::Bme280},
+        {0x76, SensorTypeIds::Bme680},
+        {0x76, SensorTypeIds::Dps310},
+        {0x77, SensorTypeIds::Bmp180},
+        {0x77, SensorTypeIds::Bme680},
+        {0x77, SensorTypeIds::Dps310},
+    };
+
+    // Only called for a candidate whose table address already matches what's on the bus - narrows which begin() overload actually confirms the chip, not just guesses at it.
+    bool probeI2CCandidate(int sensorTypeId, uint8_t addr)
+    {
+        switch (sensorTypeId)
+        {
+        case SensorTypeIds::Bmp280: return bmp280.begin(addr);
+        case SensorTypeIds::Bme280: return bme280.begin(addr);
+        case SensorTypeIds::Bme680: return bme680.begin(addr);
+        case SensorTypeIds::Dps310: return dps310.begin_I2C(addr);
+        case SensorTypeIds::Bmp180: return bmp180.begin(); // fixed 0x77, begin() takes an oversampling mode, not an address
+        case SensorTypeIds::Ccs811: return ccs811.begin(addr);
+        case SensorTypeIds::Mlx90614: return mlx90614.begin(addr);
+        case SensorTypeIds::Mcp9808: return mcp9808.begin(addr);
+        case SensorTypeIds::Aht: return aht.begin(); // fixed 0x38, no address overload
+        case SensorTypeIds::Am2320: return am2320.begin(); // fixed 0x5C
+        case SensorTypeIds::Htu21Df: return htu21df.begin(); // fixed 0x40
+        case SensorTypeIds::Si7021: return si7021.begin(); // fixed 0x40, same address as Htu21Df above
+        case SensorTypeIds::Sht31: return sht31.begin(addr);
+        case SensorTypeIds::Sht4x: return sht4x.begin(); // fixed 0x44
+        case SensorTypeIds::Shtc3: return shtc3.begin(); // fixed 0x70
+        case SensorTypeIds::Scd30: { scd30.begin(Wire, addr); return scd30.startPeriodicMeasurement(0) == 0; }
+        case SensorTypeIds::Scd4x: { scd4x.begin(Wire, addr); return scd4x.startPeriodicMeasurement() == 0; }
+        case SensorTypeIds::ChirpSoilMoisture: chirpSoilMoisture.begin(); return true; // fixed at the address its constructor was given, no init-success signal
+        case SensorTypeIds::Ads1115Ec: return ads1115.begin(addr);
+        case SensorTypeIds::Tsl2561: return tsl2561.begin(); // address fixed at construction (TSL2561_ADDR_FLOAT)
+        case SensorTypeIds::Tsl2591: return tsl2591.begin(addr);
+        case SensorTypeIds::Si1145: return si1145.begin(addr);
+        case SensorTypeIds::Ltr390: return ltr390.begin(); // fixed 0x53
+        case SensorTypeIds::Veml7700: return veml7700.begin(); // fixed 0x10
+        case SensorTypeIds::As7341: return as7341.begin(addr);
+        case SensorTypeIds::Max17048: return maxlipo.begin(); // fixed 0x36
+        default: return false;
+        }
+    }
+}
+
+String SensorController::detectSensors()
+{
+    JsonDocument doc;
+    JsonArray addresses = doc["Addresses"].to<JsonArray>();
+
+    for (uint16_t addr = 0x08; addr <= 0x77; addr++)
+    {
+        Wire.beginTransmission(addr);
+        if (Wire.endTransmission() != 0)
+        {
+            continue; // nothing answered at this address
+        }
+
+        JsonArray matchedCandidates;
+        for (const auto &candidate : i2cCandidates)
+        {
+            if (candidate.address != addr || !probeI2CCandidate(candidate.sensorTypeId, addr))
+            {
+                continue;
+            }
+            if (matchedCandidates.isNull())
+            {
+                JsonObject entry = addresses.add<JsonObject>();
+                entry["Address"] = addr;
+                matchedCandidates = entry["Candidates"].to<JsonArray>();
+            }
+            matchedCandidates.add(candidate.sensorTypeId);
+        }
+    }
+
+    String result;
+    serializeJson(doc, result);
+    return result;
+}
+
 void SensorController::reportDHTTemperature(sensors_event_t &event, const char *label)
 {
     Serial.print("[Sensor] ");

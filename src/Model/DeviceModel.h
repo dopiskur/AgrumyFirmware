@@ -42,6 +42,7 @@ enum CommandActionType
     COMMAND_SCAN_FOR_DEVICES = 4,
     COMMAND_PROVISION_DEVICE = 5,
     COMMAND_UPDATE_WIFI = 6,
+    COMMAND_DETECT_SENSORS = 7,
 };
 
 struct PendingCommand

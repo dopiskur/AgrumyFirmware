@@ -867,7 +867,7 @@
         },
         "actionType": {
           "type": "integer",
-          "description": "1=Reboot, 2=ForceOTA, 3=ForceConfigSync (api.Models.CommandActionType) - same server->firmware raw-int convention as relayFunction/deviceTypeServiceID, not a string."
+          "description": "1=Reboot, 2=ForceOTA, 3=ForceConfigSync, 7=DetectSensors (Agrumy.Shared.Models.CommandActionType) - same server->firmware raw-int convention as relayFunction/deviceTypeServiceID, not a string."
         },
         "expiresAt": {
           "type": "string",

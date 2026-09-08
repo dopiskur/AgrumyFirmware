@@ -102,6 +102,9 @@ private:
 public:
     void setupSensor();
 
+    // On-demand I2C bus scan + driver-begin() disambiguation, independent of the device's current sensor config; returns a JSON string ({"Addresses":[{"Address":N,"Candidates":[sensorTypeId,...]}]}) for ServiceController to relay back via pushEvent.
+    String detectSensors();
+
     // serviceRequest stays a per-module member (unlike deviceConfig): this one always targets the sensor-data/event endpoints.
     ServiceRequest serviceRequest;
 

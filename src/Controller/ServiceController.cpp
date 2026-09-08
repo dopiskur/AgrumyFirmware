@@ -6,6 +6,7 @@
 #include "NTPClient.h"
 #include "ServiceController.h"
 #include "DeviceController.h"
+#include "SensorController.h"
 #include "StorageController.h"
 #include "ConfigParser.h"
 #include "../Logic/DiscoveryLogic.h"
@@ -306,6 +307,14 @@ void ServiceController::processPendingCommand(DeviceConfig& config, ServiceReque
         Serial.println("[Service] Command " + String(commandId) + " (UpdateWifiCredentials): trying new network");
         bool switched = switchWifiNetwork(config.pendingCommand.payload, serviceRequest);
         pushEvent(serviceRequest, "CommandExecuted", switched ? "wifi switch verified and applied" : "wifi switch failed verification, reverted to previous network", commandId);
+        break;
+    }
+
+    case COMMAND_DETECT_SENSORS:
+    {
+        Serial.println("[Service] Command " + String(commandId) + " (DetectSensors): scanning I2C bus");
+        String scanResult = sensor.detectSensors();
+        pushEvent(serviceRequest, "CommandExecuted", scanResult, commandId);
         break;
     }
 
