@@ -190,8 +190,17 @@ void setup()
   String configRegistration = device.loadRegistrationWithFallback();
   if (configRegistration.isEmpty())
   {
-    Serial.println("[Main] Registration file not found, starting initialization...");
-    device.initializeDevice(); // blocks in the Agrumy_<mac> portal, then reboots
+    // Web-flasher hook - a short window for firmware-provisioning.js to send WiFi+login+PIN over the same serial port the flash just used, skipping the captive portal below entirely when it does.
+    if (device.tryReadSerialProvisioning())
+    {
+      Serial.println("[Main] Serial provisioning applied - skipping the captive portal");
+      configRegistration = device.loadRegistrationWithFallback();
+    }
+    else
+    {
+      Serial.println("[Main] Registration file not found, starting initialization...");
+      device.initializeDevice(); // blocks in the Agrumy_<mac> portal, then reboots
+    }
   }
 
   device.initializeWifi();

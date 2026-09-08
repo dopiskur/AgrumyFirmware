@@ -60,6 +60,10 @@ public:
     String consumeCrashSummary();
 
     void initializeDevice(); // sets up the WiFi AP
+
+    // Web-flasher hook - waits up to timeoutMs for one '{"type":"agrumyProvision",...}' JSON line on Serial (see firmware-provisioning.js's post-flash re-open of the same port); on a match writes deviceRegistration.json + NVS backup and persists WiFi credentials via WiFi.begin(), same as initializeDevice()'s captive-portal outcome but without ever opening its own AP. False (no line arrived in time, or it didn't parse/match) leaves everything untouched - the caller falls through to initializeDevice() as before.
+    bool tryReadSerialProvisioning(unsigned long timeoutMs = 5000);
+
     void registerDevice(String configRegistration);
     DeviceConfig initializeDefaults(DeviceConfig deviceConfig);
     void initializeWifi();

@@ -237,6 +237,98 @@ String DeviceController::loadRegistrationWithFallback()
   return backup;
 }
 
+bool DeviceController::tryReadSerialProvisioning(unsigned long timeoutMs)
+{
+  String line;
+  unsigned long deadline = millis() + timeoutMs;
+  while (millis() < deadline)
+  {
+    if (Serial.available())
+    {
+      char c = (char)Serial.read();
+      if (c == '\n')
+      {
+        break;
+      }
+      if (c != '\r')
+      {
+        line += c;
+      }
+    }
+    else
+    {
+      delay(10);
+    }
+  }
+
+  if (line.isEmpty())
+  {
+    return false;
+  }
+
+  JsonDocument payload;
+  if (deserializeJson(payload, line) != DeserializationError::Ok || payload["type"] != "agrumyProvision")
+  {
+    Serial.println("[Device] Serial line received during provisioning window was not a valid agrumyProvision payload - falling through to the captive portal");
+    return false;
+  }
+
+  String ssid = payload["wifiSsid"] | "";
+  String password = payload["wifiPassword"] | "";
+  if (ssid.isEmpty())
+  {
+    Serial.println("[Device] agrumyProvision payload had no wifiSsid - falling through to the captive portal");
+    return false;
+  }
+
+  strncpy(deviceRegistration.userLogin, (const char *)(payload["userLogin"] | ""), sizeof(deviceRegistration.userLogin) - 1);
+  deviceRegistration.userLogin[sizeof(deviceRegistration.userLogin) - 1] = 0;
+  strncpy(deviceRegistration.devicePin, (const char *)(payload["devicePin"] | ""), sizeof(deviceRegistration.devicePin) - 1);
+  deviceRegistration.devicePin[sizeof(deviceRegistration.devicePin) - 1] = 0;
+  String servicePoint = payload["servicePoint"] | "";
+  if (servicePoint.isEmpty())
+  {
+    servicePoint = deviceDefaults.servicePoint;
+  }
+  strncpy(deviceRegistration.servicePoint, servicePoint.c_str(), sizeof(deviceRegistration.servicePoint) - 1);
+  deviceRegistration.servicePoint[sizeof(deviceRegistration.servicePoint) - 1] = 0;
+  strncpy(deviceRegistration.displayName, (const char *)(payload["displayName"] | ""), sizeof(deviceRegistration.displayName) - 1);
+  deviceRegistration.displayName[sizeof(deviceRegistration.displayName) - 1] = 0;
+  deviceRegistration.initialize = true;
+
+  // Persisted to the SDK's own NVS the same way WiFiManager's captive portal leaves it - initializeWifi()'s wifiManager.autoConnect() right after this picks it up with no further wiring needed.
+  WiFi.persistent(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.c_str());
+
+  JsonDocument config;
+  config["userLogin"] = deviceRegistration.userLogin;
+  config["devicePin"] = deviceRegistration.devicePin;
+  config["servicePoint"] = deviceRegistration.servicePoint;
+  config["displayName"] = deviceRegistration.displayName;
+
+  String data;
+  serializeJsonPretty(config, data);
+  Serial.println("[Device] Serial provisioning received - saving registration data " + data);
+  saveFile(data, "deviceRegistration.json");
+  waitForFileCommitted("deviceRegistration.json");
+  StorageController::saveRegistrationBackup(data);
+
+  // Blank - the serial provisioning payload deliberately carries no MQTT fields (WiFi+login+PIN only); overwrites any prior MQTT settings the same way initializeDevice()'s portal always does.
+  JsonDocument mqttConfigJson;
+  mqttConfigJson["brokerHost"] = "";
+  mqttConfigJson["brokerPort"] = 1883;
+  mqttConfigJson["username"] = "";
+  mqttConfigJson["password"] = "";
+  mqttConfigJson["persistentCommandChannel"] = false;
+  String mqttData;
+  serializeJsonPretty(mqttConfigJson, mqttData);
+  saveFile(mqttData, "mqttConfig.json");
+  waitForFileCommitted("mqttConfig.json");
+
+  return true;
+}
+
 void DeviceController::initializeWifi()
 {
 
@@ -419,6 +511,18 @@ void DeviceController::registerDevice(String configRegistration)
 
   saveFile(serviceData.payload, "config.json");
   waitForFileCommitted("config.json");
+
+  // Harmless outside the web-flasher - a plain confirmation line on an otherwise idle Serial connection, but firmware-provisioning.js listens for exactly this to resolve the device it just flashed to a real deviceID for the assign-to-farm/skip step.
+  if (!parseCheck["deviceID"].isNull())
+  {
+    JsonDocument registeredEvent;
+    registeredEvent["type"] = "agrumyRegistered";
+    registeredEvent["deviceId"] = parseCheck["deviceID"];
+    String registeredLine;
+    serializeJson(registeredEvent, registeredLine);
+    Serial.println(registeredLine);
+  }
+
   reboot();
 }
 
