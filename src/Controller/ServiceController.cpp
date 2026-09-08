@@ -48,7 +48,7 @@ String ServiceController::maskSecret(const String &value)
     return value.substring(0, 4) + "****...****" + value.substring(value.length() - 4);
 }
 
-ServiceData ServiceController::requestPost(JsonDocument jsonBuffer, ServiceRequest service)
+ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, ServiceRequest service)
 {
     ServiceData serviceData;
     String jsonRequest;

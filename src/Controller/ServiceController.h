@@ -14,7 +14,7 @@ class ServiceController
 {
 public:
     void checkConfig(String payload); // For Debug only
-    ServiceData requestPost(JsonDocument jsonBuffer, ServiceRequest serviceEndpoint);
+    ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
 
     void errorReport(EventLog eventlog);
