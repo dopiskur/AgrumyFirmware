@@ -167,26 +167,6 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     bool RELAY_ACTIVE_LOW=false;
 };
 
-struct ModuleEnabled
-{
-    bool moisture; // analog
-    bool waterLevel;   // Analog water level
-    bool dht;          // temperature, moisture
-    bool bmp180;       // temperature, pressure
-    bool bmp280;       // temperature, pressure
-    bool bme280;       // temperature, pressure, moisture
-    bool ds18b20;      // temperature
-    bool ccs811;       // CO2, TVOC
-    bool bh1750;       // Light intensity
-    bool liquidPH;     // PH sensor
-    bool AJSR04M;      // Digital water level
-    bool battery;      // Battery Sensor, voltage
-    bool camera;
-
-    bool rtc;   // Clock module
-    bool relay;
-};
-
 struct SensorType
 {
     String battery;
@@ -322,7 +302,6 @@ struct ConfigController
 
 struct DeviceConfig
 {
-    String WifiSSID;
     String WifiPassword;
     String userLogin; // Device registration
     String devicePin; // Device registration
