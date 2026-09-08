@@ -12,11 +12,20 @@
 class DeviceController;
 class ServiceController;
 
+// One config slot buildSensorData() reads per cycle - a chip serving multiple slots (e.g. BME280: temp+humid+barometer) gets one sensorReadTable row per slot it's assigned to.
+enum class SensorMetricSlot
+{
+    Battery, Temp, TempSoil, Humid, Moist, Light, Co2, Tvoc, Barometer, Ph, Ec, Weight, WaterLevel
+};
+
 class SensorController
 {
 
 private:
     SensorData sensorData;
+
+    // Looks up (slot, sensorTypeId) in sensorReadTable and calls the matching read function - no-op if nothing matches (unassigned slot, or rainLevel/wind which have no real model yet).
+    void dispatchSensorRead(SensorMetricSlot slot, int sensorTypeId);
 
     void sensor_DHT11_temp();          // SensorTypeIds::Dht11
     void sensor_DHT11_humid();          // SensorTypeIds::Dht11

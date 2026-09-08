@@ -369,6 +369,102 @@ namespace
     }
 }
 
+namespace
+{
+    struct SensorReadEntry
+    {
+        SensorMetricSlot slot;
+        int sensorTypeId;
+        void (SensorController::*read)();
+    };
+}
+
+// Table lives inside this member function (not file-scope) - a member-function-pointer literal to a private sensor_* method is only accessible from within a member function of this class, not a free function elsewhere in the file.
+void SensorController::dispatchSensorRead(SensorMetricSlot slot, int sensorTypeId)
+{
+    // One row per (slot, sensorTypeId) - replaces the ~14 separate switch-per-config-slot blocks buildSensorData() used to have.
+    static const SensorReadEntry sensorReadTable[] = {
+        {SensorMetricSlot::Battery, SensorTypeIds::Max17048, &SensorController::sensor_battery_max17048},
+        {SensorMetricSlot::Battery, SensorTypeIds::AnalogVoltage, &SensorController::sensor_analog_voltage},
+
+        {SensorMetricSlot::Temp, SensorTypeIds::Dht11, &SensorController::sensor_DHT11_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Dht22, &SensorController::sensor_DHT22_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Bmp180, &SensorController::sensor_BMP180_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Bmp280, &SensorController::sensor_BMP280_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Bme280, &SensorController::sensor_BME280_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Max31855, &SensorController::sensor_MAX31855_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Max31856, &SensorController::sensor_MAX31856_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Max31865, &SensorController::sensor_MAX31865_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Mlx90614, &SensorController::sensor_MLX90614_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Mcp9808, &SensorController::sensor_MCP9808_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Aht, &SensorController::sensor_AHT_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Am2320, &SensorController::sensor_AM2320_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Htu21Df, &SensorController::sensor_HTU21DF_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Si7021, &SensorController::sensor_SI7021_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Sht31, &SensorController::sensor_SHT31_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Sht4x, &SensorController::sensor_SHT4x_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Shtc3, &SensorController::sensor_SHTC3_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Bme680, &SensorController::sensor_BME680_temp},
+        {SensorMetricSlot::Temp, SensorTypeIds::Dps310, &SensorController::sensor_DPS310_temp},
+
+        {SensorMetricSlot::TempSoil, SensorTypeIds::Ds18B20, &SensorController::sensor_DS18B20_temp},
+
+        {SensorMetricSlot::Humid, SensorTypeIds::Dht11, &SensorController::sensor_DHT11_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Dht22, &SensorController::sensor_DHT22_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Bme280, &SensorController::sensor_BME280_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Aht, &SensorController::sensor_AHT_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Am2320, &SensorController::sensor_AM2320_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Htu21Df, &SensorController::sensor_HTU21DF_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Si7021, &SensorController::sensor_SI7021_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Sht31, &SensorController::sensor_SHT31_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Sht4x, &SensorController::sensor_SHT4x_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Shtc3, &SensorController::sensor_SHTC3_humid},
+        {SensorMetricSlot::Humid, SensorTypeIds::Bme680, &SensorController::sensor_BME680_humid},
+
+        {SensorMetricSlot::Moist, SensorTypeIds::AnalogMoisture, &SensorController::sensor_analog_moist},
+        {SensorMetricSlot::Moist, SensorTypeIds::ChirpSoilMoisture, &SensorController::sensor_Chirp_moist},
+
+        {SensorMetricSlot::Light, SensorTypeIds::Bh1750, &SensorController::sensor_BH1750_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::Tsl2561, &SensorController::sensor_TSL2561_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::Tsl2591, &SensorController::sensor_TSL2591_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::Si1145, &SensorController::sensor_SI1145_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::Ltr390, &SensorController::sensor_LTR390_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::Veml7700, &SensorController::sensor_VEML7700_lux},
+        {SensorMetricSlot::Light, SensorTypeIds::As7341, &SensorController::sensor_AS7341_lux},
+
+        {SensorMetricSlot::Co2, SensorTypeIds::Ccs811, &SensorController::sensor_CCS811_co2},
+        {SensorMetricSlot::Co2, SensorTypeIds::Scd30, &SensorController::sensor_SCD30_co2},
+        {SensorMetricSlot::Co2, SensorTypeIds::Scd4x, &SensorController::sensor_SCD4x_co2},
+        {SensorMetricSlot::Co2, SensorTypeIds::Mhz19, &SensorController::sensor_MHZ19_co2},
+
+        {SensorMetricSlot::Tvoc, SensorTypeIds::Ccs811, &SensorController::sensor_CCS811_tvoc},
+
+        {SensorMetricSlot::Barometer, SensorTypeIds::Bmp180, &SensorController::sensor_BMP180_pres},
+        {SensorMetricSlot::Barometer, SensorTypeIds::Bmp280, &SensorController::sensor_BMP280_pres},
+        {SensorMetricSlot::Barometer, SensorTypeIds::Bme280, &SensorController::sensor_BME280_pres},
+        {SensorMetricSlot::Barometer, SensorTypeIds::Bme680, &SensorController::sensor_BME680_pres},
+        {SensorMetricSlot::Barometer, SensorTypeIds::Dps310, &SensorController::sensor_DPS310_pres},
+
+        {SensorMetricSlot::Ph, SensorTypeIds::EzoPh, &SensorController::sensor_EzoPH_ph},
+        {SensorMetricSlot::Ph, SensorTypeIds::AnyleafPh, &SensorController::sensor_AnyleafPH_ph},
+
+        {SensorMetricSlot::Ec, SensorTypeIds::Ads1115Ec, &SensorController::sensor_ADS1115_ec},
+
+        {SensorMetricSlot::Weight, SensorTypeIds::Hx711, &SensorController::sensor_HX711_weight},
+
+        {SensorMetricSlot::WaterLevel, SensorTypeIds::AnalogWaterLevel, &SensorController::sensor_analog_waterLevel},
+    };
+
+    for (const auto &entry : sensorReadTable)
+    {
+        if (entry.slot == slot && entry.sensorTypeId == sensorTypeId)
+        {
+            (this->*entry.read)();
+            return;
+        }
+    }
+}
+
 String SensorController::detectSensors()
 {
     JsonDocument doc;
@@ -1243,311 +1339,20 @@ void SensorController::buildSensorData(DeviceConfig deviceConfig)
     sensorData.ec=NAN;
     sensorData.weight=NAN;
 
-    switch (deviceConfig.configSensor.sensorBattery)
-    {
-    case SensorTypeIds::Max17048:
-        sensor_battery_max17048();
-        break;
-    case SensorTypeIds::AnalogVoltage:
-        sensor_analog_voltage();
-        break;
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorTemp)
-    {
-    case SensorTypeIds::Dht11:
-        sensor_DHT11_temp();
-        break;
-    case SensorTypeIds::Dht22:
-        sensor_DHT22_temp();
-        break;
-    case SensorTypeIds::Bmp180:
-        sensor_BMP180_temp();
-        break;
-    case SensorTypeIds::Bmp280:
-        sensor_BMP280_temp();
-        break;
-    case SensorTypeIds::Bme280:
-        sensor_BME280_temp();
-        break;
-    case SensorTypeIds::Max31855:
-        sensor_MAX31855_temp();
-        break;
-    case SensorTypeIds::Max31856:
-        sensor_MAX31856_temp();
-        break;
-    case SensorTypeIds::Max31865:
-        sensor_MAX31865_temp();
-        break;
-    case SensorTypeIds::Mlx90614:
-        sensor_MLX90614_temp();
-        break;
-    case SensorTypeIds::Mcp9808:
-        sensor_MCP9808_temp();
-        break;
-    case SensorTypeIds::Aht:
-        sensor_AHT_temp();
-        break;
-    case SensorTypeIds::Am2320:
-        sensor_AM2320_temp();
-        break;
-    case SensorTypeIds::Htu21Df:
-        sensor_HTU21DF_temp();
-        break;
-    case SensorTypeIds::Si7021:
-        sensor_SI7021_temp();
-        break;
-    case SensorTypeIds::Sht31:
-        sensor_SHT31_temp();
-        break;
-    case SensorTypeIds::Sht4x:
-        sensor_SHT4x_temp();
-        break;
-    case SensorTypeIds::Shtc3:
-        sensor_SHTC3_temp();
-        break;
-    case SensorTypeIds::Bme680:
-        sensor_BME680_temp();
-        break;
-    case SensorTypeIds::Dps310:
-        sensor_DPS310_temp();
-        break;
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorTempSoil)
-    {
-    case SensorTypeIds::Ds18B20:
-        sensor_DS18B20_temp();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorHumid)
-    {
-    case SensorTypeIds::Dht11:
-        sensor_DHT11_humid();
-        break;
-
-    default:
-        break;
-    }
-    switch (deviceConfig.configSensor.sensorHumid)
-    {
-    case SensorTypeIds::Dht22:
-        sensor_DHT22_humid();
-        break;
-
-    default:
-        break;
-    }
-    switch (deviceConfig.configSensor.sensorHumid)
-    {
-    case SensorTypeIds::Bme280:
-        sensor_BME280_humid();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorHumid)
-    {
-    case SensorTypeIds::Aht:
-        sensor_AHT_humid();
-        break;
-    case SensorTypeIds::Am2320:
-        sensor_AM2320_humid();
-        break;
-    case SensorTypeIds::Htu21Df:
-        sensor_HTU21DF_humid();
-        break;
-    case SensorTypeIds::Si7021:
-        sensor_SI7021_humid();
-        break;
-    case SensorTypeIds::Sht31:
-        sensor_SHT31_humid();
-        break;
-    case SensorTypeIds::Sht4x:
-        sensor_SHT4x_humid();
-        break;
-    case SensorTypeIds::Shtc3:
-        sensor_SHTC3_humid();
-        break;
-    case SensorTypeIds::Bme680:
-        sensor_BME680_humid();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorMoist)
-    {
-    case SensorTypeIds::AnalogMoisture:
-        sensor_analog_moist();
-        break;
-    case SensorTypeIds::ChirpSoilMoisture:
-        sensor_Chirp_moist();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorLight)
-    {
-    case SensorTypeIds::Bh1750:
-        sensor_BH1750_lux();
-        break;
-    case SensorTypeIds::Tsl2561:
-        sensor_TSL2561_lux();
-        break;
-    case SensorTypeIds::Tsl2591:
-        sensor_TSL2591_lux();
-        break;
-    case SensorTypeIds::Si1145:
-        sensor_SI1145_lux();
-        break;
-    case SensorTypeIds::Ltr390:
-        sensor_LTR390_lux();
-        break;
-    case SensorTypeIds::Veml7700:
-        sensor_VEML7700_lux();
-        break;
-    case SensorTypeIds::As7341:
-        sensor_AS7341_lux();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorCo2)
-    {
-    case SensorTypeIds::Ccs811:
-        sensor_CCS811_co2();
-        break;
-    case SensorTypeIds::Scd30:
-        sensor_SCD30_co2();
-        break;
-    case SensorTypeIds::Scd4x:
-        sensor_SCD4x_co2();
-        break;
-    case SensorTypeIds::Mhz19:
-        sensor_MHZ19_co2();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorTvoc)
-    {
-    case SensorTypeIds::Ccs811:
-        sensor_CCS811_tvoc();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorBarometer)
-    {
-    case SensorTypeIds::Bmp180:
-        sensor_BMP180_pres();
-        break;
-
-    default:
-        break;
-    }
-    switch (deviceConfig.configSensor.sensorBarometer)
-    {
-    case SensorTypeIds::Bmp280:
-        sensor_BMP280_pres();
-        break;
-
-    default:
-        break;
-    }
-    switch (deviceConfig.configSensor.sensorBarometer)
-    {
-    case SensorTypeIds::Bme280:
-        sensor_BME280_pres();
-        break;
-    case SensorTypeIds::Bme680:
-        sensor_BME680_pres();
-        break;
-    case SensorTypeIds::Dps310:
-        sensor_DPS310_pres();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorPH)
-    {
-    // Two concrete, chosen pH models get real wiring here; a generic/unspecified pH probe still stays unimplemented (no universal calibration curve exists for one).
-    case SensorTypeIds::EzoPh:
-        sensor_EzoPH_ph();
-        break;
-    case SensorTypeIds::AnyleafPh:
-        sensor_AnyleafPH_ph();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorEc)
-    {
-    case SensorTypeIds::Ads1115Ec:
-        sensor_ADS1115_ec();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorWeight)
-    {
-    case SensorTypeIds::Hx711:
-        sensor_HX711_weight();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorWaterLevel)
-    {
-    case SensorTypeIds::AnalogWaterLevel:
-        sensor_analog_waterLevel();
-        break;
-
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorRainLevel)
-    {
-    // No SensorTypeIds constant exists yet for a real rain-level model - stays unreachable, same convention as every other sensor type here, until one is assigned.
-    default:
-        break;
-    }
-
-    switch (deviceConfig.configSensor.sensorWind)
-    {
-    // No SensorTypeIds constant exists yet for a real wind model - stays unreachable, same convention as every other sensor type here, until one is assigned.
-    default:
-        break;
-    }
+    // Table-driven dispatch (sensorReadTable above) - one call per config slot, replacing what used to be ~14 separate switch blocks. sensorRainLevel/sensorWind have no real model yet (see DeviceModel.h) so dispatchSensorRead simply finds no match for either, same as the old switches' unreachable default.
+    dispatchSensorRead(SensorMetricSlot::Battery, deviceConfig.configSensor.sensorBattery);
+    dispatchSensorRead(SensorMetricSlot::Temp, deviceConfig.configSensor.sensorTemp);
+    dispatchSensorRead(SensorMetricSlot::TempSoil, deviceConfig.configSensor.sensorTempSoil);
+    dispatchSensorRead(SensorMetricSlot::Humid, deviceConfig.configSensor.sensorHumid);
+    dispatchSensorRead(SensorMetricSlot::Moist, deviceConfig.configSensor.sensorMoist);
+    dispatchSensorRead(SensorMetricSlot::Light, deviceConfig.configSensor.sensorLight);
+    dispatchSensorRead(SensorMetricSlot::Co2, deviceConfig.configSensor.sensorCo2);
+    dispatchSensorRead(SensorMetricSlot::Tvoc, deviceConfig.configSensor.sensorTvoc);
+    dispatchSensorRead(SensorMetricSlot::Barometer, deviceConfig.configSensor.sensorBarometer);
+    dispatchSensorRead(SensorMetricSlot::Ph, deviceConfig.configSensor.sensorPH);
+    dispatchSensorRead(SensorMetricSlot::Ec, deviceConfig.configSensor.sensorEc);
+    dispatchSensorRead(SensorMetricSlot::Weight, deviceConfig.configSensor.sensorWeight);
+    dispatchSensorRead(SensorMetricSlot::WaterLevel, deviceConfig.configSensor.sensorWaterLevel);
 
     buildSensorDataPayload();
 

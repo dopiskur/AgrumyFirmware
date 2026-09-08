@@ -34,6 +34,18 @@ struct EventLog
     String errorData ="";
 };
 
+// Coarse "where in the loop was the device when it died" marker - RTC_DATA_ATTR-backed (see DeviceController.cpp), survives the panic-reboot a WDT timeout triggers, read back by consumeCrashSummary() to tell a genuine crash from a WDT stall and say roughly where the stall happened.
+enum LoopPhase
+{
+    PHASE_BOOT = 0,
+    PHASE_WIFI_INIT,
+    PHASE_SENSOR_SETUP,
+    PHASE_WIFI_RECONNECT,
+    PHASE_API_CONFIG,
+    PHASE_SENSOR_READ,
+    PHASE_SLEEP_IDLE,
+};
+
 enum CommandActionType
 {
     COMMAND_REBOOT = 1,
@@ -207,6 +219,9 @@ struct ConfigSensor
 
 #include "../Logic/ConditionTree.h"
 
+
+// Roadmap #451(23) - bumped only when a config wire-format change is big enough that an old firmware silently misreading/ignoring a field would matter; ConfigParser::parse() logs (not rejects) when the server's schemaVersion is newer than this, so a stale-firmware-after-server-upgrade mismatch is visible in the serial log during OTA rollback triage instead of just "some field is mysteriously wrong".
+static const int CONFIG_SCHEMA_VERSION = 1;
 
 // Beyond this cap, ConfigParser silently drops extra rules (ArduinoJson has no dynamic growth on-device).
 static const int MAX_RULES = 32;

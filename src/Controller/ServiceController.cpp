@@ -13,6 +13,8 @@
 #include "../Logic/HttpDateLogic.h"
 
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // Root CA bundle embedded via platformio.ini board_build.embed_files.
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
@@ -456,6 +458,15 @@ bool ServiceController::provisionDiscoveredDevice(const String& payloadJson)
     return success;
 }
 
+// Roadmap #451(22) - freeHeap alone doesn't show fragmentation (MaxAllocHeap) or a transient dip since boot (MinFreeHeap), and neither shows how close the loop task itself is to a stack overflow (StackHighWaterMark, bytes never touched - low means close). Shared by both heartbeat call sites below.
+static void addHeapDiagnostics(JsonDocument &payload)
+{
+    payload["FreeHeap"] = ESP.getFreeHeap();
+    payload["MinFreeHeap"] = ESP.getMinFreeHeap();
+    payload["MaxAllocHeap"] = ESP.getMaxAllocHeap();
+    payload["StackHighWaterMark"] = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+}
+
 // A real config-poll, not just WiFi.status()==WL_CONNECTED - a wrong/isolated network can still hand out a link with no route to the server. Mirrors apiConfig()'s own single auth-retry, but never touches its reboot/config-apply side effects.
 static bool verifyServerReachable(ServiceController& serviceController, ServiceRequest serviceRequest)
 {
@@ -467,7 +478,7 @@ static bool verifyServerReachable(ServiceController& serviceController, ServiceR
     payload["ConfigVersion"] = String(deviceConfig.configVersion);
     payload["Uptime"] = (uint32_t)(esp_timer_get_time() / 1000000ULL);
     payload["Rssi"] = WiFi.RSSI();
-    payload["FreeHeap"] = ESP.getFreeHeap();
+    addHeapDiagnostics(payload);
     payload["FirmwareVersion"] = firmware;
     payload["Board"] = AGRUMY_BOARD;
     payload["Kit"] = AGRUMY_KIT;
@@ -600,10 +611,11 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     // The config poll doubles as the heartbeat. esp_timer, not millis(): 64-bit, no 49-day wrap.
     payload["Uptime"] = (uint32_t)(esp_timer_get_time() / 1000000ULL);
     payload["Rssi"] = WiFi.RSSI();
-    payload["FreeHeap"] = ESP.getFreeHeap();
+    addHeapDiagnostics(payload);
     payload["FirmwareVersion"] = firmware;
     payload["Board"] = AGRUMY_BOARD; // PlatformIO env name from the build flag, never guessed from the chip at runtime
     payload["Kit"] = AGRUMY_KIT;
+    payload["ConfigSchemaVersion"] = CONFIG_SCHEMA_VERSION;
 
     serviceData = requestPost(payload, serviceRequest);
 

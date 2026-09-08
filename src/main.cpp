@@ -203,6 +203,7 @@ void setup()
     }
   }
 
+  device.setLastPhase(PHASE_WIFI_INIT);
   device.initializeWifi();
   // initializeWifi() may now fall through here still disconnected (autoConnect()'s portal times out instead of blocking forever, loop() retries in the background) - when it IS connected, WL_CONNECTED can still report before the IP stack/DNS resolver is actually ready for a real HTTP request, which this delay covers.
   delay(500);
@@ -262,6 +263,7 @@ void setup()
   device.powerRailPrimary(true);
   device.powerRailSecondary(true);
 
+  device.setLastPhase(PHASE_SENSOR_SETUP);
   sensor.setupSensor();    // early init for more precise measurement
   device.setupController(); // initialize time
   mqtt.begin(device);        // loads mqttConfig.json - no-op if MQTT was never configured
@@ -289,6 +291,7 @@ void loop()
   static unsigned long lastWifiRetryMs = 0;
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryMs > 60000UL)
   {
+    device.setLastPhase(PHASE_WIFI_RECONNECT);
     Serial.println("[Loop] WiFi not connected - attempting reconnect");
     WiFi.reconnect();
     lastWifiRetryMs = millis();
@@ -303,6 +306,7 @@ void loop()
   }
 
   // deviceConfig is passed by reference and is the single canonical instance, so a hot-applied config (no reboot) is visible to every module the instant apiConfig() returns.
+  device.setLastPhase(PHASE_API_CONFIG);
   service.apiConfig(deviceConfig, serviceRequest, device);
   // >0 only right after a 429 ("Wait") - skip the sensor push too, no point adding another request while the relay/server asked us to back off.
   bool waitingForServer = service.waitSeconds > 0;
@@ -331,6 +335,7 @@ void loop()
 #endif
 
   if (deviceConfig.enabled && !waitingForServer) {
+    device.setLastPhase(PHASE_SENSOR_READ);
     sensor.buildSensorData(deviceConfig);
   } else {
     // buildSensorData()/initController() are being skipped this cycle - force relays off instead of leaving them frozen in whatever state they were last driven to.
@@ -352,6 +357,7 @@ void loop()
 
   // A full cycle finished without wedging - feed the watchdog. Anything that hangs inside apiConfig()/buildSensorData() never reaches this point, so the reboot backstop stays effective against a real stall.
   esp_task_wdt_reset();
+  device.setLastPhase(PHASE_SLEEP_IDLE);
 
   // A relay-driving device dynamically sleeps toward its nearest Schedule/Interval boundary instead of a fixed sleepSeconds, which can otherwise skip a short window entirely or run past its end.
   uint32_t cycleSeconds;

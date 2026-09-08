@@ -59,6 +59,9 @@ public:
     // Reads and clears any pending core dump the ESP-IDF panic handler wrote on the LAST crash. Call once from setup(). Empty string means no crash since the partition was last cleared.
     String consumeCrashSummary();
 
+    // Records which loop phase main.cpp is currently in, RTC-persisted so a WDT/crash reboot can report where it happened - see consumeCrashSummary().
+    void setLastPhase(int phase);
+
     void initializeDevice(); // sets up the WiFi AP
 
     // Web-flasher hook - waits up to timeoutMs for one '{"type":"agrumyProvision",...}' JSON line on Serial (see firmware-provisioning.js's post-flash re-open of the same port); on a match writes deviceRegistration.json + NVS backup and persists WiFi credentials via WiFi.begin(), same as initializeDevice()'s captive-portal outcome but without ever opening its own AP. False (no line arrived in time, or it didn't parse/match) leaves everything untouched - the caller falls through to initializeDevice() as before.

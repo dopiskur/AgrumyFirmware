@@ -24,6 +24,29 @@ RTC_DATA_ATTR static int rtcRapidConfigRebootCount = 0;
 // Separate from the crash-loop counter above: unconditional (set on every config-triggered reboot, not just rapid ones), answers "did this boot follow a just-applied config" rather than "is this a suspicious streak".
 RTC_DATA_ATTR static bool rtcConfigJustAppliedPending = false;
 
+// Roadmap #451(21) - see LoopPhase's own remarks (DeviceModel.h). Survives the same panic-reboot as the two counters above.
+RTC_DATA_ATTR static int rtcLastPhase = PHASE_BOOT;
+
+static const char *loopPhaseName(int phase)
+{
+    switch (phase)
+    {
+    case PHASE_BOOT: return "Boot";
+    case PHASE_WIFI_INIT: return "WifiInit";
+    case PHASE_SENSOR_SETUP: return "SensorSetup";
+    case PHASE_WIFI_RECONNECT: return "WifiReconnect";
+    case PHASE_API_CONFIG: return "ApiConfig";
+    case PHASE_SENSOR_READ: return "SensorRead";
+    case PHASE_SLEEP_IDLE: return "SleepIdle";
+    default: return "Unknown";
+    }
+}
+
+void DeviceController::setLastPhase(int phase)
+{
+    rtcLastPhase = phase;
+}
+
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
@@ -185,7 +208,8 @@ String DeviceController::consumeCrashSummary()
              " pc=0x" + String(summary->exc_pc, HEX) +
              " cause=" + String(summary->ex_info.exc_cause) +
              " vaddr=0x" + String(summary->ex_info.exc_vaddr, HEX) +
-             (summary->exc_bt_info.corrupted ? " bt(corrupted)=" : " bt=") + backtrace;
+             (summary->exc_bt_info.corrupted ? " bt(corrupted)=" : " bt=") + backtrace +
+             " phase=" + loopPhaseName(rtcLastPhase);
     Serial.println("[Device] Pending crash dump found: " + result);
   }
   else

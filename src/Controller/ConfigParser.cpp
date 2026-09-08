@@ -179,6 +179,12 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   // currentConfig is re-parsed in place on every call, so a failure flagged above must not linger into the next call that succeeds.
   currentConfig.eventlog.error = false;
 
+  int serverSchemaVersion = config["schemaVersion"] | 0; // 0 from a server build that predates this field
+  if (serverSchemaVersion > CONFIG_SCHEMA_VERSION)
+  {
+    Serial.printf("[Device] Config schemaVersion %d is newer than this firmware understands (%d) - some new fields may be silently ignored, consider an OTA update\n", serverSchemaVersion, CONFIG_SCHEMA_VERSION);
+  }
+
   currentConfig.configVersion = config["configVersion"];
 
   currentConfig.tenantID = config["tenantID"];
