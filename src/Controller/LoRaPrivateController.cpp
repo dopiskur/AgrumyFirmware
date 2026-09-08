@@ -1,10 +1,13 @@
 #include "Controller/LoRaPrivateController.h"
+#include "Controller/StorageController.h"
 #include "Logic/BatteryLogic.h"
 #include "Logic/LoRaPrivatePayloadFramingLogic.h"
 #include <RadioLib.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include <esp_task_wdt.h>
+#include <cstring>
 #include "mbedtls/gcm.h"
 
 namespace
@@ -34,6 +37,40 @@ namespace
     // slow, sparse sensor cadence (seconds, not the millisecond-scale RX windows a LoRaWAN Class A
     // device has to respect), unverified against real air time.
     const uint32_t DOWNLINK_LISTEN_TIMEOUT_MS = 3000;
+
+    // Own SensorController::pushSensorData-shaped RAM-buffer-then-spill instance, in RTC slow memory (not a plain static) since deep sleep between cycles would otherwise wipe it every boot.
+    // 8192 (SensorController's own threshold) overflows this chip's 8KB RTC_SLOW segment once DeviceController.cpp's rtc* variables and RTC_SLOW's own reserved slack are accounted for - trimmed down just enough to link.
+    const size_t LORA_BUFFER_SPILL_BYTES = 8100;
+    RTC_DATA_ATTR uint8_t rtcUplinkBuffer[LORA_BUFFER_SPILL_BYTES];
+    RTC_DATA_ATTR size_t rtcUplinkBufferLen = 0;
+
+    // [2-byte big-endian length][frame bytes] per entry, so several queued frames pack into one file without a JSON wrapper.
+    void appendFrameToRtcBuffer(const std::string &frame)
+    {
+        rtcUplinkBuffer[rtcUplinkBufferLen++] = (uint8_t)((frame.size() >> 8) & 0xFF);
+        rtcUplinkBuffer[rtcUplinkBufferLen++] = (uint8_t)(frame.size() & 0xFF);
+        memcpy(&rtcUplinkBuffer[rtcUplinkBufferLen], frame.data(), frame.size());
+        rtcUplinkBufferLen += frame.size();
+    }
+
+    void spillRtcBufferToDisk()
+    {
+        if (rtcUplinkBufferLen == 0)
+        {
+            return;
+        }
+        String blob;
+        blob.reserve(rtcUplinkBufferLen);
+        for (size_t i = 0; i < rtcUplinkBufferLen; i++)
+        {
+            blob += (char)rtcUplinkBuffer[i];
+        }
+        if (!StorageController::bufferLoRaUplinkToDisk(blob))
+        {
+            Serial.println("[LoRaPrivate] RTC uplink buffer could not be persisted to LittleFS - dropped " + String((unsigned)rtcUplinkBufferLen) + " bytes");
+        }
+        rtcUplinkBufferLen = 0; // reset either way - a failed spill is deliberate data loss, same convention as StorageController's other buffer types
+    }
 }
 
 SX1262 loRaPrivateRadio = new Module(PIN_CS, PIN_DIO1, PIN_RST, PIN_BUSY);
@@ -164,12 +201,108 @@ LoRaSensorReading LoRaPrivateController::readSensors()
     return reading;
 }
 
+void LoRaPrivateController::bufferFailedUplink(const std::string &frame)
+{
+    if (frame.size() + 2 > LORA_BUFFER_SPILL_BYTES)
+    {
+        Serial.println("[LoRaPrivate] Uplink frame larger than the entire RTC buffer - dropping it");
+        return;
+    }
+    if (rtcUplinkBufferLen + 2 + frame.size() > LORA_BUFFER_SPILL_BYTES)
+    {
+        spillRtcBufferToDisk();
+    }
+    appendFrameToRtcBuffer(frame);
+}
+
+// Disk backlog (oldest file first) then RTC RAM - same "backlog before a live attempt" ordering as SensorController::pushSensorData; stops at the first failed retransmit, leaving the rest queued.
+bool LoRaPrivateController::flushBufferedUplinks()
+{
+    String filename = StorageController::oldestBufferedLoRaUplinkFile();
+    while (!filename.isEmpty())
+    {
+        String blob = StorageController::loadFile(filename);
+        if (blob.isEmpty())
+        {
+            Serial.println("[LoRaPrivate] Buffered file /" + filename + " unreadable - dropping it");
+            StorageController::removeBufferedFile(filename);
+            filename = StorageController::oldestBufferedLoRaUplinkFile();
+            esp_task_wdt_reset();
+            continue;
+        }
+
+        size_t pos = 0;
+        size_t len = (size_t)blob.length();
+        bool allSent = true;
+        while (pos + 2 <= len)
+        {
+            uint16_t frameLen = ((uint8_t)blob[pos] << 8) | (uint8_t)blob[pos + 1];
+            pos += 2;
+            if (pos + frameLen > len)
+            {
+                // Truncated/corrupt tail - a poison entry here would wedge the queue forever, so drop the rest of this file and move on.
+                Serial.println("[LoRaPrivate] Buffered file /" + filename + " truncated - dropping remainder");
+                break;
+            }
+
+            int state = loRaPrivateRadio.transmit((const uint8_t *)blob.c_str() + pos, frameLen);
+            pos += frameLen;
+            if (state != RADIOLIB_ERR_NONE)
+            {
+                Serial.printf("[LoRaPrivate] Flush retransmit failed, code %d - remaining buffer stays queued\n", state);
+                allSent = false;
+                break;
+            }
+        }
+
+        if (!allSent)
+        {
+            return false;
+        }
+
+        Serial.println("[LoRaPrivate] Flushed /" + filename);
+        StorageController::removeBufferedFile(filename);
+
+        esp_task_wdt_reset(); // a deep backlog could otherwise outlast the task WDT without a per-file feed
+        filename = StorageController::oldestBufferedLoRaUplinkFile();
+    }
+
+    // Disk is clear - now drain whatever's still queued in RTC RAM, oldest (front) frame first.
+    size_t pos = 0;
+    while (pos + 2 <= rtcUplinkBufferLen)
+    {
+        uint16_t frameLen = ((uint16_t)rtcUplinkBuffer[pos] << 8) | rtcUplinkBuffer[pos + 1];
+        if (pos + 2 + frameLen > rtcUplinkBufferLen)
+        {
+            break; // shouldn't happen - appendFrameToRtcBuffer() never writes a partial frame
+        }
+
+        int state = loRaPrivateRadio.transmit(&rtcUplinkBuffer[pos + 2], frameLen);
+        if (state != RADIOLIB_ERR_NONE)
+        {
+            Serial.printf("[LoRaPrivate] RTC buffer retransmit failed, code %d - remaining frames stay queued\n", state);
+            break;
+        }
+        pos += 2 + frameLen;
+    }
+    if (pos > 0)
+    {
+        // Compact: drop the frames just sent, keep whatever's left (usually nothing) at the front.
+        memmove(rtcUplinkBuffer, &rtcUplinkBuffer[pos], rtcUplinkBufferLen - pos);
+        rtcUplinkBufferLen -= pos;
+    }
+
+    return rtcUplinkBufferLen == 0;
+}
+
 uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
 {
     if (!configLoaded)
     {
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
+
+    bool backlogClear = flushBufferedUplinks();
 
     LoRaSensorReading reading = readSensors();
     std::string jsonPayload = encodeLoRaSensorUplink(reading);
@@ -205,10 +338,19 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
     std::string wirePayload = encodeLoRaPrivateCipherFrame(counter, ciphertext, tag);
     std::string frame = encodeLoRaPrivateFrame(gatewayAddress, nodeAddress, wirePayload);
 
+    if (!backlogClear)
+    {
+        // Same radio, same failure just now - a live attempt this cycle would likely fail too, so buffer straight away instead of wasting airtime confirming it.
+        Serial.println("[LoRaPrivate] Backlog still queued - buffering this uplink instead of a doomed live attempt");
+        bufferFailedUplink(frame);
+        return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
+    }
+
     int state = loRaPrivateRadio.transmit((const uint8_t *)frame.data(), frame.size());
     if (state != RADIOLIB_ERR_NONE)
     {
         Serial.printf("[LoRaPrivate] Transmit failed, code %d\n", state);
+        bufferFailedUplink(frame);
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
     Serial.printf("[LoRaPrivate] Sent %u encrypted bytes (counter=%llu) to gateway=%u\n", (unsigned)wirePayload.size(), (unsigned long long)counter, gatewayAddress);

@@ -31,6 +31,11 @@ private:
     uint64_t loadCounter();
     bool saveCounter(uint64_t value);
 
+    /// Retransmits /lorabuffer files then queued RTC-RAM frames, oldest first; false if frames are still queued after.
+    bool flushBufferedUplinks();
+    /// Appends a failed uplink frame to the RTC buffer, spilling it to /lorabuffer first if it wouldn't fit.
+    void bufferFailedUplink(const std::string &frame);
+
     uint16_t nodeAddress = 0;
     uint16_t gatewayAddress = 0;
     float frequencyMHz = 868.0;

@@ -315,6 +315,83 @@ String StorageController::oldestBufferedRelayFile()
   return best.isEmpty() ? String() : "relaybuffer/" + best;
 }
 
+// Same shape as bufferRelayUplinkToDisk() above, own /lorabuffer directory and .dat extension since the content is a binary blob, not JSON.
+bool StorageController::bufferLoRaUplinkToDisk(String payload)
+{
+  size_t total = LittleFS.totalBytes();
+  size_t used = LittleFS.usedBytes();
+  if (total == 0 || used * 100 >= total * 70)
+  {
+    Serial.printf("[Device] LoRa uplink buffer DISCARDED: LittleFS %u/%u bytes (>= 70%% full) - deliberate data loss by design\n", (unsigned)used, (unsigned)total);
+    return false;
+  }
+
+  static int nextIndex = -1;
+  if (nextIndex < 0)
+  {
+    LittleFS.mkdir("/lorabuffer");
+    nextIndex = 1;
+    File dir = LittleFS.open("/lorabuffer");
+    File entry;
+    while (dir && (entry = dir.openNextFile()))
+    {
+      int n = String(entry.name()).toInt();
+      entry.close();
+      if (n >= nextIndex)
+      {
+        nextIndex = n + 1;
+      }
+    }
+  }
+
+  char name[28];
+  snprintf(name, sizeof(name), "lorabuffer/%05d.dat", nextIndex);
+  nextIndex++;
+  if (!saveFile(payload, name))
+  {
+    Serial.printf("[Device] LoRa uplink buffer spill to /%s FAILED - frames not persisted\n", name);
+    return false;
+  }
+
+  Serial.printf("[Device] LoRa uplink buffer spilled to /%s - LittleFS now %u/%u bytes\n", name, (unsigned)LittleFS.usedBytes(), (unsigned)total);
+  return true;
+}
+
+String StorageController::oldestBufferedLoRaUplinkFile()
+{
+  if (!LittleFS.exists("/lorabuffer"))
+  {
+    return String();
+  }
+
+  File dir = LittleFS.open("/lorabuffer");
+  if (!dir || !dir.isDirectory())
+  {
+    return String();
+  }
+
+  String best;
+  File entry;
+  while ((entry = dir.openNextFile()))
+  {
+    String name = entry.name();
+    entry.close();
+    if (name.startsWith("/lorabuffer/"))
+    {
+      name = name.substring(12);
+    }
+    if (!name.endsWith(".dat"))
+    {
+      continue;
+    }
+    if (best.isEmpty() || name.compareTo(best) < 0)
+    {
+      best = name;
+    }
+  }
+  return best.isEmpty() ? String() : "lorabuffer/" + best;
+}
+
 void StorageController::removeBufferedFile(String filename)
 {
   LittleFS.remove("/" + filename);

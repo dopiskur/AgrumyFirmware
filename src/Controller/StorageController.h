@@ -26,6 +26,10 @@ public:
     static bool bufferRelayUplinkToDisk(String payloadJson);
     static String oldestBufferedRelayFile();
 
+    // Same shape again but under /lorabuffer, for LoRaPrivateController's own RTC-RAM uplink buffer spilling over - binary content (length-prefixed encrypted frames), not JSON, own directory since payload/consumer differ from both buffers above.
+    static bool bufferLoRaUplinkToDisk(String payload);
+    static String oldestBufferedLoRaUplinkFile();
+
     static void removeBufferedFile(String filename);
 
     // NVS (Preferences), a genuinely separate flash partition from LittleFS - a LittleFS-specific corruption never takes out both copies of the one file the device needs to know who it is.
