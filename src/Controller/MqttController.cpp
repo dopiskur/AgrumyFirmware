@@ -4,6 +4,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include "mbedtls/md.h"
+#include <LittleFS.h>
 
 #include "MqttController.h"
 #include "DeviceController.h"
@@ -28,8 +29,50 @@ namespace
     PubSubClient persistentClient;
     bool persistentClientInitialized = false;
 
-    // In-RAM only, resets on reboot - closes the realistic same-session replay window (a captured, still-validly-signed message republished later this same uptime), not a persisted, cross-reboot-safe ledger.
+    // Persisted to LittleFS (not RAM-only) so a captured, still-validly-signed message can't be replayed right after
+    // reboot during the implausible-clock window commandIsReplayed() otherwise fails open on - same file-per-counter
+    // pattern as LoRaPrivateController's uplink COUNTER_FILE.
+    const char *LAST_COMMAND_ID_FILE = "/mqttLastProcessedCommandId.dat";
     int lastProcessedCommandId = 0;
+
+    int loadLastProcessedCommandId()
+    {
+        if (!LittleFS.exists(LAST_COMMAND_ID_FILE))
+        {
+            return 0;
+        }
+        File f = LittleFS.open(LAST_COMMAND_ID_FILE, "r");
+        if (!f || f.size() < 4)
+        {
+            if (f)
+            {
+                f.close();
+            }
+            return 0;
+        }
+        uint32_t value = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            value = (value << 8) | (uint8_t)f.read();
+        }
+        f.close();
+        return (int)value;
+    }
+
+    void saveLastProcessedCommandId(int value)
+    {
+        File f = LittleFS.open(LAST_COMMAND_ID_FILE, "w");
+        if (!f)
+        {
+            return;
+        }
+        uint32_t unsignedValue = (uint32_t)value;
+        for (int shift = 24; shift >= 0; shift -= 8)
+        {
+            f.write((uint8_t)((unsignedValue >> shift) & 0xFF));
+        }
+        f.close();
+    }
 
     // 32 raw HMAC-SHA256 bytes -> 64 lowercase hex chars + NUL, same convention as OtaController's sha256ToHex.
     void hmacSha256Hex(const String &key, const String &message, char out[65])
@@ -82,6 +125,7 @@ namespace
             return;
         }
         lastProcessedCommandId = idDeviceCommand;
+        saveLastProcessedCommandId(idDeviceCommand);
 
         if (actionType == COMMAND_FORCE_CONFIG_SYNC)
         {
@@ -104,6 +148,7 @@ namespace
 void MqttController::begin(DeviceController& device)
 {
     clientId = "Agrumy_" + device.macAddr();
+    lastProcessedCommandId = loadLastProcessedCommandId();
 
     String configJson = device.loadFile("mqttConfig.json");
     if (configJson.isEmpty())
