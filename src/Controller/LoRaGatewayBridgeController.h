@@ -5,12 +5,13 @@
 
 /// The LoRa private-protocol Gateway's radio-frontend board (mains-powered, always-on ESP32+SX126x) -
 /// bridges raw RadioLib LoRa frames (Logic/LoRaPrivateFrameLogic) to/from Agrumy.Gateway over USB
-/// serial (Logic/AgrumySerialFrameLogic). Deliberately dumb: no addressing/mapping decisions happen
-/// here, it only translates between the two wire formats - all routing logic (node address -> Agrumy
-/// device) lives server-side in api.Gateway.LoRaPrivate.LoRaPrivateProtocolUplinkService, same
-/// "gateway is a transparent forwarder" principle as Profile A. Two-board over-the-air uplink and
-/// the serial link to a real Agrumy.Gateway process confirmed on real Heltec WiFi LoRa 32 V3
-/// hardware (2026-09-06) - downlink (Gateway -> bridge -> node) still unverified.
+/// serial (Logic/AgrumySerialFrameLogic). Mostly dumb (no addressing/mapping decisions - all routing
+/// logic lives server-side in api.Gateway.LoRaPrivate.LoRaPrivateProtocolUplinkService, same
+/// "gateway is a transparent forwarder" principle as Profile A), with one exception: it immediately
+/// acks a received uplink's plaintext counter prefix back over LoRa itself, without waiting on the
+/// serial/host round trip, since that has to land inside the node's ~1s RX1 window. Two-board
+/// over-the-air uplink, the serial link to a real Agrumy.Gateway process, and this ack round trip
+/// have all been confirmed on real Heltec WiFi LoRa 32 V3 hardware (2026-09-06/08).
 class LoRaGatewayBridgeController
 {
 public:

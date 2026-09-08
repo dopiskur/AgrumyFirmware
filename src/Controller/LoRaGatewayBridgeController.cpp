@@ -120,6 +120,14 @@ void LoRaGatewayBridgeController::pollRadioForUplink()
     }
 
     Serial.printf("[LoRaBridge] Uplink from node=%u rssi=%d len=%u: %s\n", frame.srcAddress, rssi, (unsigned)frame.payload.size(), frame.payload.c_str());
+
+    // Echoes the plaintext counter prefix (LoRaPrivatePayloadFramingLogic's [counter:8][ciphertext][tag] layout - this bridge never decrypts, so it never sees the rest) straight back over LoRa as the node's RX1-window ack, before the non-time-critical serial forward below.
+    if (frame.payload.size() >= 8)
+    {
+        std::string ackFrame = encodeLoRaPrivateFrame(frame.srcAddress, gatewayAddress, frame.payload.substr(0, 8));
+        loRaBridgeRadio.transmit((const uint8_t *)ackFrame.data(), ackFrame.size());
+    }
+
     std::string serialFrame = encodeAgrumySerialUplink(frame.srcAddress, rssi, frame.payload);
     Serial.write((const uint8_t *)serialFrame.data(), serialFrame.size());
 }

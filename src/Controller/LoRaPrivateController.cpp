@@ -33,10 +33,20 @@ namespace
     const double BATTERY_DIVIDER_R1_OHMS = 100000.0;
     const double BATTERY_DIVIDER_R2_OHMS = 100000.0;
 
-    // How long to listen for a downlink after each uplink - generous relative to this profile's
-    // slow, sparse sensor cadence (seconds, not the millisecond-scale RX windows a LoRaWAN Class A
-    // device has to respect), unverified against real air time.
-    const uint32_t DOWNLINK_LISTEN_TIMEOUT_MS = 3000;
+    // Class-A-style RX1/RX2 downlink windows - confirmed reliable against real air time (SF9, two Heltec V3 boards, 2026-09-08); a real command from the Gateway host normally needs the extra serial round trip so it tends to land in RX2, the bridge's own immediate ack tends to land in RX1.
+    const uint32_t DOWNLINK_RX1_TIMEOUT_MS = 1000;
+    const uint32_t DOWNLINK_RX2_TIMEOUT_MS = 1000;
+
+    // True if an 8-byte downlink payload is the gateway's ack for this exact uplink counter (big-endian, same layout as LoRaPrivatePayloadFramingLogic's plaintext counter prefix).
+    bool isCounterAck(const std::string &payload, uint64_t counter)
+    {
+        uint64_t echoed = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            echoed = (echoed << 8) | (uint8_t)payload[i];
+        }
+        return echoed == counter;
+    }
 
     // Own SensorController::pushSensorData-shaped RAM-buffer-then-spill instance, in RTC slow memory (not a plain static) since deep sleep between cycles would otherwise wipe it every boot.
     // 8192 (SensorController's own threshold) overflows this chip's 8KB RTC_SLOW segment once DeviceController.cpp's rtc* variables and RTC_SLOW's own reserved slack are accounted for - trimmed down just enough to link.
@@ -355,26 +365,51 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
     }
     Serial.printf("[LoRaPrivate] Sent %u encrypted bytes (counter=%llu) to gateway=%u\n", (unsigned)wirePayload.size(), (unsigned long long)counter, gatewayAddress);
 
-    uint8_t downlinkBuf[64];
-    state = loRaPrivateRadio.receive(downlinkBuf, sizeof(downlinkBuf), DOWNLINK_LISTEN_TIMEOUT_MS);
-    if (state == RADIOLIB_ERR_NONE)
+    uint32_t sleepSeconds = (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
+    bool acked = false;
+    // Standard two-window Class-A-style listen: RX1 right after the uplink, RX2 only if RX1 caught nothing - the bridge's own ack (LoRaGatewayBridgeController) normally lands in RX1, RX2 is the retry margin.
+    const uint32_t rxTimeoutsMs[2] = {DOWNLINK_RX1_TIMEOUT_MS, DOWNLINK_RX2_TIMEOUT_MS};
+    for (int window = 0; window < 2; window++)
     {
+        uint8_t downlinkBuf[64];
+        state = loRaPrivateRadio.receive(downlinkBuf, sizeof(downlinkBuf), rxTimeoutsMs[window]);
+        if (state == RADIOLIB_ERR_RX_TIMEOUT)
+        {
+            continue;
+        }
+        if (state != RADIOLIB_ERR_NONE)
+        {
+            Serial.printf("[LoRaPrivate] Downlink listen error (RX%d), code %d\n", window + 1, state);
+            continue;
+        }
+
         size_t len = loRaPrivateRadio.getPacketLength();
         LoRaPrivateFrame downlink;
-        if (decodeLoRaPrivateFrame(downlinkBuf, len, downlink) && downlink.destAddress == nodeAddress)
+        if (!decodeLoRaPrivateFrame(downlinkBuf, len, downlink) || downlink.destAddress != nodeAddress)
         {
-            Serial.printf("[LoRaPrivate] Downlink received: %s\n", downlink.payload.c_str());
-            JsonDocument doc;
-            if (!deserializeJson(doc, downlink.payload) && doc["retryAfterSeconds"].is<int>())
-            {
-                return (uint32_t)doc["retryAfterSeconds"].as<int>();
-            }
+            continue;
         }
+
+        // An 8-byte payload echoing this uplink's own counter is the bridge's ack, not a command - see LoRaGatewayBridgeController::pollRadioForUplink.
+        if (downlink.payload.size() == 8 && isCounterAck(downlink.payload, counter))
+        {
+            Serial.printf("[LoRaPrivate] Uplink counter=%llu acknowledged by gateway (RX%d)\n", (unsigned long long)counter, window + 1);
+            acked = true;
+            break;
+        }
+
+        Serial.printf("[LoRaPrivate] Downlink received: %s\n", downlink.payload.c_str());
+        JsonDocument doc;
+        if (!deserializeJson(doc, downlink.payload) && doc["retryAfterSeconds"].is<int>())
+        {
+            sleepSeconds = (uint32_t)doc["retryAfterSeconds"].as<int>();
+        }
+        break;
     }
-    else if (state != RADIOLIB_ERR_RX_TIMEOUT)
+    if (!acked)
     {
-        Serial.printf("[LoRaPrivate] Downlink listen error, code %d\n", state);
+        Serial.printf("[LoRaPrivate] Uplink counter=%llu not acknowledged\n", (unsigned long long)counter);
     }
 
-    return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
+    return sleepSeconds;
 }
