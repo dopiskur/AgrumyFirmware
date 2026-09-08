@@ -308,8 +308,6 @@ struct DeviceConfig
 
     int configVersion;
 
-    // Separate from configVersion on purpose: a queued command must not force a full config re-apply, and vice versa.
-    int commandVersion = 0;
     PendingCommand pendingCommand;
 
     int tenantID;

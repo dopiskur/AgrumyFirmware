@@ -213,7 +213,6 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.firmwareUrl = config["firmwareUrl"] | String("");
   currentConfig.firmwareSha256 = config["firmwareSha256"] | String("");
 
-  currentConfig.commandVersion = config["commandVersion"] | currentConfig.commandVersion;
   JsonVariant pendingCommandJson = config["pendingCommand"];
   if (pendingCommandJson.isNull())
   {
