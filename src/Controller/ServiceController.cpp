@@ -227,6 +227,34 @@ void ServiceController::pushEvent(ServiceRequest service, String eventType, Stri
     requestPost(payload, service);
 }
 
+// Fire-and-forget: same convention as pushEvent - a dropped push just means the Fleet page's relay/position display lags until the next tick that also has a change, never buffered/retried like SensorData.
+void ServiceController::pushControllerData(ServiceRequest service, const ControllerDataChange changes[], int count, const String &dateCreated)
+{
+    if (count == 0)
+    {
+        return;
+    }
+    service.endpoint = serviceEndpoint.apiControllerDataPost;
+    service.header.apiKey = ""; // session-auth (apiAuth), same as apiConfig()/pushEvent()
+
+    JsonDocument payload;
+    JsonArray array = payload.to<JsonArray>();
+    for (int i = 0; i < count; i++)
+    {
+        JsonObject entry = array.add<JsonObject>();
+        entry["relayFunction"] = changes[i].relayFunction;
+        entry["isOn"] = changes[i].isOn;
+        if (changes[i].isPositional)
+        {
+            entry["percent"] = changes[i].percent;
+        }
+        entry["dateCreated"] = dateCreated;
+    }
+
+    Serial.println("[Service] pushControllerData: " + String(count) + " change(s)");
+    requestPost(payload, service);
+}
+
 // Ack happens BEFORE execute: a Reboot has no "after" on this same connection to report from.
 void ServiceController::processPendingCommand(DeviceConfig& config, ServiceRequest serviceRequest, DeviceController& device)
 {

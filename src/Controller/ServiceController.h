@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 
 #include "../Model/DeviceModel.h"
+#include "ActuatorController.h"
 
 // Forward declarations
 class DeviceController;
@@ -25,6 +26,9 @@ public:
 
     // Best-effort, never checked or retried. commandId is included only when >= 0 (alongside EventType="CommandExecuted").
     void pushEvent(ServiceRequest service, String eventType, String message, int commandId = -1);
+
+    // Best-effort, never checked or retried - same convention as pushEvent. dateCreated is computed once by the caller (DeviceController::getDateTime()), not re-derived per entry, so every entry in the same push shares one timestamp.
+    void pushControllerData(ServiceRequest service, const ControllerDataChange changes[], int count, const String &dateCreated);
 
     // Acks the pending command, performs its action, then reports the outcome via pushEvent - except Reboot, which never returns. No-op if config.pendingCommand is not present.
     void processPendingCommand(DeviceConfig& config, ServiceRequest serviceRequest, DeviceController& device);

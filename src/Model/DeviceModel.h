@@ -454,6 +454,8 @@ struct ServiceEndpoint
     String apiSensorDataPost="/api/SensorData";
     String apiSensorDataGet="";
 
+    String apiControllerDataPost = "/api/ControllerData";
+
 };
 
 // Single canonical instance, defined once in main.cpp: every translation unit reads/writes the same object, so a config update is visible everywhere without re-copying.

@@ -341,6 +341,16 @@ void ActuatorController::driveEveryAssignedRelayOff() const
         pwmPinMode(pin);
         pwmWrite(pin, 0);
     }
+
+    // The Fleet page must reflect EmergencyStop/relayEnabled=false immediately, not keep showing whatever was last decided before this tick forced everything off.
+    const RelayFunctionType allFunctions[MAX_REPORTED_FUNCTIONS] = {
+        RelayFunctionType::Ventilation, RelayFunctionType::Light, RelayFunctionType::Heating,
+        RelayFunctionType::WaterPump, RelayFunctionType::Screen, RelayFunctionType::Vent,
+    };
+    for (RelayFunctionType function : allFunctions)
+    {
+        recordControllerState(function, false, 0);
+    }
 }
 
 // Called from main.cpp's loop() whenever a disabled/backoff cycle skips buildSensorData()/initController() entirely, so relays stop freezing in whatever state they were last driven to.
@@ -363,6 +373,39 @@ bool ActuatorController::isRelayOn(RelayFunctionType relayFunction) const
     bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
     relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
     return relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
+}
+
+void ActuatorController::recordControllerState(RelayFunctionType function, bool isOn, int percent) const
+{
+    int idx = (int)function - 1;
+    if (idx < 0 || idx >= MAX_REPORTED_FUNCTIONS || pendingControllerDataChangeCount >= MAX_REPORTED_FUNCTIONS)
+    {
+        return;
+    }
+    bool positional = isPositionalRelayFunction(function);
+    if (isOn == lastReportedOn[idx] && (!positional || percent == lastReportedPercent[idx]))
+    {
+        return; // no change since the last report - the wire contract only sends a CHANGE, not a periodic state dump
+    }
+    lastReportedOn[idx] = isOn;
+    lastReportedPercent[idx] = percent;
+
+    ControllerDataChange &entry = pendingControllerDataChanges[pendingControllerDataChangeCount++];
+    entry.relayFunction = (int)function;
+    entry.isOn = isOn;
+    entry.isPositional = positional;
+    entry.percent = percent;
+}
+
+int ActuatorController::consumeControllerDataChanges(ControllerDataChange changes[]) const
+{
+    int count = pendingControllerDataChangeCount;
+    for (int i = 0; i < count; i++)
+    {
+        changes[i] = pendingControllerDataChanges[i];
+    }
+    pendingControllerDataChangeCount = 0;
+    return count;
 }
 
 void ActuatorController::initController(SensorData sensorData, time_t epochSeconds)
@@ -514,6 +557,12 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
             int duty = isPositionalRelayFunction(function) ? computePwmDutyPercent(shouldBeOn, targetPercent) : computePwmDutyPercent(shouldBeOn, pwmIntensities[i]);
             pwmWrite(pwmPins[i], duty);
         }
+
+        // WaterPump is recorded separately below, AFTER its own safety-limit pass - that pass can still force it off this same tick, so recording shouldBeOn here would misreport a pump the safety limit is about to override. No such later override exists for any other function.
+        if (function != RelayFunctionType::WaterPump)
+        {
+            recordControllerState(function, shouldBeOn, targetPercent);
+        }
     }
 
     // Safety limits are applied per PHYSICAL SLOT (not once for the function, unlike the loop above) - each relay slot sharing the WaterPump function keeps its own independent on/off-since history. Reuses configuredType/relayPin declared at the top of this function.
@@ -524,6 +573,8 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
             applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds, sensorData.waterLevel);
         }
     }
+    // Real pin read, not the pre-safety-limit shouldBeOn decided above - the safety-limit pass just run may have forced WaterPump off regardless of what the rules wanted. Reports false (no change from the default) for a WaterPump-less device, same as any other unassigned function.
+    recordControllerState(RelayFunctionType::WaterPump, isRelayOn(RelayFunctionType::WaterPump), 0);
 
     // relayI2CFaulted() reflects the LAST i2cWriteShadow() call, so checking once here (after every relayWrite this tick) catches a bus fault regardless of which function's write hit it.
     if (relayI2CFaulted())

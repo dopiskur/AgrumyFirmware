@@ -1187,6 +1187,14 @@ void SensorController::pushSensorData(JsonDocument payload){
         service.pushEvent(serviceRequest, "SensorStale", sensorStaleMessage);
     }
 
+    ControllerDataChange controllerDataChanges[MAX_REPORTED_FUNCTIONS];
+    int controllerDataChangeCount = controller.consumeControllerDataChanges(controllerDataChanges);
+    if (controllerDataChangeCount > 0)
+    {
+        // Own timestamp, not sensorData's - this push can trail SensorData's by however long flushBufferedSensorData() above took, so reusing its dateCreated would misreport when the relay change actually happened.
+        service.pushControllerData(serviceRequest, controllerDataChanges, controllerDataChangeCount, device.getDateTime());
+    }
+
     // Disk backlog goes first, oldest file first, so the server receives rows in chronological order; a flush that broke off means the connection is down again, so skip the doomed live attempt.
     bool sent = false;
     if (flushBufferedSensorData())

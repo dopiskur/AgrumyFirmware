@@ -28,6 +28,18 @@ enum class RelayFunctionType
 // True for a positional actuator (target percent 0-100, not a plain on/off decision).
 bool isPositionalRelayFunction(RelayFunctionType function);
 
+// Highest RelayFunctionType value in use - sizes the per-function last-reported-state arrays below.
+static const int MAX_REPORTED_FUNCTIONS = 6;
+
+// One entry ActuatorController::consumeControllerDataChanges hands back - mirrors api.Models.ControllerDataPush's wire shape (relayFunction/isOn/percent), percent only meaningful when isPositional.
+struct ControllerDataChange
+{
+    int relayFunction = 0;
+    bool isOn = false;
+    bool isPositional = false;
+    int percent = 0;
+};
+
 class ActuatorController
 {
 public:
@@ -53,6 +65,9 @@ public:
 
     // Read-only, no relay writes - roadmap #133's local display page. False for an unassigned function, same as it being physically off.
     bool isRelayOn(RelayFunctionType relayFunction) const;
+
+    // One-shot poll of every function whose driven state (on/off, and for a positional function its target percent) changed since the last call - same polling contract as consumeSafetyLimitEvent. changes must hold at least MAX_REPORTED_FUNCTIONS entries; returns how many were written.
+    int consumeControllerDataChanges(ControllerDataChange changes[]) const;
 
 private:
     // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
@@ -91,6 +106,15 @@ private:
 
     // NAN for an unrecognized metric - same "no reading this cycle" convention evaluateCondition already uses, so the caller's existing isnan() guard covers it too.
     double readingForTargetMetric(int targetMetric, const SensorData &sensorData) const;
+
+    // Compares (isOn, percent) against this function's own last REPORTED values (not its last DRIVEN values - a tick that decides the same state again is not a change); queues a ControllerDataChange only on a genuine difference. const: called from driveEveryAssignedRelayOff(), which is const - the arrays below are mutable accordingly.
+    void recordControllerState(RelayFunctionType function, bool isOn, int percent) const;
+
+    // Indexed by (int)function - 1. Both default to "off"/0 so a function that starts off and never turns on is correctly never reported - matches the wire contract's "sent every time state actually CHANGES" convention, not a full state dump every tick.
+    mutable bool lastReportedOn[MAX_REPORTED_FUNCTIONS] = {false, false, false, false, false, false};
+    mutable int lastReportedPercent[MAX_REPORTED_FUNCTIONS] = {0, 0, 0, 0, 0, 0};
+    mutable ControllerDataChange pendingControllerDataChanges[MAX_REPORTED_FUNCTIONS];
+    mutable int pendingControllerDataChangeCount = 0;
 
     time_t waterPumpOnSinceEpoch[MAX_RELAY_SLOTS] = {0};
     time_t waterPumpOffSinceEpoch[MAX_RELAY_SLOTS] = {0};
