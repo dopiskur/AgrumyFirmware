@@ -13,7 +13,7 @@
 class DeviceController;
 class SensorController;
 
-// Must match deviceTypeRelay's DB seed order (1=Ventilation, 2=Light, 3=Heating, 4=Water pump) - the Web admin dropdown stores this ID directly into one of ConfigController.relays[].relayFunction.
+// Must match deviceTypeRelay's DB seed order (1=Ventilation, 2=Light, 3=Heating, 4=Water pump, 5=Screen, 6=Vent) - the Web admin dropdown stores this ID directly into one of ConfigController.relays[].relayFunction. Screen/Vent are POSITIONAL (a target percent, not on/off) - see initController's separate fold for them.
 enum class RelayFunctionType
 {
     None = 0,
@@ -21,7 +21,12 @@ enum class RelayFunctionType
     Light = 2,
     Heating = 3,
     WaterPump = 4,
+    Screen = 5,
+    Vent = 6,
 };
+
+// True for a positional actuator (target percent 0-100, not a plain on/off decision).
+bool isPositionalRelayFunction(RelayFunctionType function);
 
 class ActuatorController
 {

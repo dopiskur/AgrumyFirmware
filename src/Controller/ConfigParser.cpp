@@ -273,6 +273,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 
         Rule candidate;
         candidate.targetFunction = r["relayFunction"];
+        candidate.targetPercent = r["targetPercent"] | 0; // only meaningful for a positional function (Screen/Vent), ignored otherwise
         candidate.nodeCount = 0;
         JsonObject rootJson = r["root"];
         int rootIndex = rootJson.isNull() ? -1 : parseConditionNode(rootJson, candidate);

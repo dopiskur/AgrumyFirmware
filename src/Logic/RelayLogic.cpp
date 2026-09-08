@@ -104,6 +104,19 @@ int computePwmDutyPercent(bool shouldBeOn, int intensityPercent)
     return intensityPercent < 0 ? 0 : (intensityPercent > 100 ? 100 : intensityPercent);
 }
 
+int foldTargetPercent(const int targetPercents[], const bool ruleIsTrue[], int count)
+{
+    int best = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (ruleIsTrue[i] && targetPercents[i] > best)
+        {
+            best = targetPercents[i];
+        }
+    }
+    return best;
+}
+
 namespace
 {
     // Magnus formula, same constants api.Utils.DewPointCalculator uses server-side.

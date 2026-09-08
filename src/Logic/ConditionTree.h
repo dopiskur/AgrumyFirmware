@@ -105,10 +105,12 @@ static const int MAX_NODES_PER_RULE = 8;
 // OR together on top of this, unchanged since before #212.
 struct Rule
 {
-    int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump
+    int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump,5=Screen,6=Vent
     ConditionNode nodes[MAX_NODES_PER_RULE];
     int nodeCount = 0;
     int rootIndex = 0; // index into nodes[] of the tree's root
+    // Only meaningful for a positional targetFunction (Screen/Vent) - the position this rule commands while its tree evaluates true. 0 for every other function, ignored by the plain on/off fold.
+    int targetPercent = 0;
 };
 
 #endif

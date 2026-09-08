@@ -79,6 +79,12 @@ bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch
 // Roadmap #231 - PWM output is a proportional decorator on the SAME on/off decision a relay slot already computed for this function, not an independent output: full intensityPercent while on, 0 while off. Clamped to [0,100] since a bad server value must not exceed the physical duty-cycle range.
 int computePwmDutyPercent(bool shouldBeOn, int intensityPercent);
 
+// Positional actuators (Screen/Vent) fold several simultaneously-true rules to ONE target percent by
+// taking the MAX among them ("how much airflow/shade is needed" naturally wants "at least this much"),
+// 0 when none are currently true (closed/rest position) - same "OR across rules" spirit the binary
+// functions already use in initController's own loop, just MAX instead of boolean-OR.
+int foldTargetPercent(const int targetPercents[], const bool ruleIsTrue[], int count);
+
 // Dry-run protection: true if WaterPump must be forced off regardless of what Threshold/Interval/Schedule/Manual
 // decided, because the tank is below minLevelPercent - covers Interval/Schedule/Manual too, which never consult
 // waterLevel on their own. minLevelPercent<=0 or rawEmpty==rawFull (uncalibrated - a Water Valve zone with no tank

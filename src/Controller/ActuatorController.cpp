@@ -56,6 +56,11 @@ int ActuatorController::collectPwmSlotsForFunction(RelayFunctionType relayFuncti
     return count;
 }
 
+bool isPositionalRelayFunction(RelayFunctionType function)
+{
+    return function == RelayFunctionType::Screen || function == RelayFunctionType::Vent;
+}
+
 // Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (roadmap #396(4) made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
 namespace
 {
@@ -404,32 +409,73 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     int localWeekday = localTm->tm_wday;      // 0=Sunday..6=Saturday
     int localSecondsOfDay = localTm->tm_hour * 3600 + localTm->tm_min * 60 + localTm->tm_sec;
 
-    // ONE pass per relay function: every rule targeting it is OR'd together (any rule saying "on" wins), then the single result is written to every pin assigned to it.
-    const RelayFunctionType functions[4] = {
+    // ONE pass per relay function: every rule targeting it is OR'd together (any rule saying "on" wins) for a
+    // binary function, or MAX'd to a target percent for a positional one (Screen/Vent) - either way, the single
+    // result is written to every pin/PWM output assigned to it.
+    const RelayFunctionType functions[6] = {
         RelayFunctionType::Ventilation, RelayFunctionType::Light,
         RelayFunctionType::Heating, RelayFunctionType::WaterPump,
+        RelayFunctionType::Screen, RelayFunctionType::Vent,
     };
     for (RelayFunctionType function : functions)
     {
         int pins[MAX_RELAY_SLOTS];
         int pinCount = collectPinsForFunction(function, pins);
-        if (pinCount == 0)
+        // Mirrors this function's decision onto any dedicated PWM output assigned to it. Collected
+        // BEFORE the empty-check below, since a positional function (Screen/Vent) may be PWM-only with no plain
+        // relay slot at all - Inert on every board today, PWM_PINS ships all-UNASSIGNED until a real schematic
+        // confirms free GPIOs.
+        int pwmPins[MAX_PWM_SLOTS];
+        int pwmIntensities[MAX_PWM_SLOTS];
+        int pwmCount = collectPwmSlotsForFunction(function, pwmPins, pwmIntensities);
+        if (pinCount == 0 && pwmCount == 0)
         {
-            continue; // no relay slot assigned to this function
+            continue; // no relay slot and no PWM output assigned to this function
         }
 
-        // Threshold rules need the function's CURRENT physical state for hysteresis math - read once from the first assigned pin; every pin sharing one function is kept in sync by the write below, so any one is representative.
-        relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
-        bool isCurrentlyOn = relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
+        // Threshold rules need the function's CURRENT physical state for hysteresis math - read once from the
+        // first assigned relay pin; every pin sharing one function is kept in sync by the write below, so any one
+        // is representative. A PWM-only positional function (no relay pin at all) has no physical state to read
+        // back yet - starts every tick from "was off", a known limitation shared with PWM_PINS itself being unwired.
+        bool isCurrentlyOn = false;
+        if (pinCount > 0)
+        {
+            relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
+            isCurrentlyOn = relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
+        }
 
         bool shouldBeOn = false;
-        for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
+        int targetPercent = 0;
+        if (isPositionalRelayFunction(function))
         {
-            const Rule &rule = deviceConfig.configController.rules[i];
-            if (rule.targetFunction == (int)function &&
-                evaluateRule(rule, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn))
+            // A positional function's rules don't OR to a plain bool, they MAX to a target percent (foldTargetPercent) - the highest-demanding currently-true rule wins.
+            int targetPercents[MAX_RULES];
+            bool ruleIsTrue[MAX_RULES];
+            int matchingRuleCount = 0;
+            for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
             {
-                shouldBeOn = true;
+                const Rule &rule = deviceConfig.configController.rules[i];
+                if (rule.targetFunction != (int)function)
+                {
+                    continue;
+                }
+                targetPercents[matchingRuleCount] = rule.targetPercent;
+                ruleIsTrue[matchingRuleCount] = evaluateRule(rule, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn);
+                matchingRuleCount++;
+            }
+            targetPercent = foldTargetPercent(targetPercents, ruleIsTrue, matchingRuleCount);
+            shouldBeOn = targetPercent > 0;
+        }
+        else
+        {
+            for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
+            {
+                const Rule &rule = deviceConfig.configController.rules[i];
+                if (rule.targetFunction == (int)function &&
+                    evaluateRule(rule, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn))
+                {
+                    shouldBeOn = true;
+                }
             }
         }
 
@@ -459,14 +505,14 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
             relayWrite(pins[i], shouldBeOn, i2cAddr, i2cSda, i2cScl, activeLow);
         }
 
-        // Roadmap #231 - mirrors this SAME function's shouldBeOn decision onto any dedicated PWM output assigned to it, as a proportional signal rather than an independent on/off decision (see PwmSlot's own remarks). Inert on every board today - PWM_PINS ships all-UNASSIGNED until a real schematic confirms free GPIOs.
-        int pwmPins[MAX_PWM_SLOTS];
-        int pwmIntensities[MAX_PWM_SLOTS];
-        int pwmCount = collectPwmSlotsForFunction(function, pwmPins, pwmIntensities);
+        // A positional function drives its PWM output straight to the rule-commanded targetPercent (bypassing the
+        // slot's own intensityPercent dial entirely - "open to 30%" means 30%, not 30% of some other admin-set
+        // brightness); a binary function keeps mirroring shouldBeOn onto intensityPercent unchanged.
         for (int i = 0; i < pwmCount; i++)
         {
             pwmPinMode(pwmPins[i]);
-            pwmWrite(pwmPins[i], computePwmDutyPercent(shouldBeOn, pwmIntensities[i]));
+            int duty = isPositionalRelayFunction(function) ? computePwmDutyPercent(shouldBeOn, targetPercent) : computePwmDutyPercent(shouldBeOn, pwmIntensities[i]);
+            pwmWrite(pwmPins[i], duty);
         }
     }
 
