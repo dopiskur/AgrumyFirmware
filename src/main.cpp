@@ -129,7 +129,7 @@ void loop()
 const char *firmware = FIRMWARE_VERSION;
 const String CONFIG_DEFAULTS = "config.json";
 
-// Default 8192-byte loopTask stack overflows this app's own call depth (setup()'s ConfigParser::parse chain needs >32768); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE fix. Covers JSON parsing only, not TLS (ServiceController::requestPost/requestGet run on their own dedicated task, see NETWORK_TASK_STACK_SIZE) and not DeviceConfig (heap-allocated, never a stack local - see ServiceController::apiConfig's configCandidate).
+// Default 8192-byte loopTask stack overflowed this app's own call depth before DeviceConfig moved off the stack (see DeviceModel.h's static_assert); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE fix. Real usage now sits around 3.5KB (uxTaskGetStackHighWaterMark in the [Diag] logs below) - the rest is headroom for TLS (own dedicated task, NETWORK_TASK_STACK_SIZE) and future loopTask-side growth.
 SET_LOOP_TASK_STACK_SIZE(32768);
 
 // Reboots if a loop() cycle wedges before completing. Sized to clear ~4 sequential HTTPClient calls per cycle (config sync, re-auth, retry, sensor push) at the default 5s TCP timeout each, with margin. Independent of server-set sleepSeconds - the inter-cycle sleep is fed separately in loop().
