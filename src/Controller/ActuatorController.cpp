@@ -1,15 +1,66 @@
 #include "Arduino.h"
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 #include "FS.h"
 #include "WiFiManager.h"
 
 #include "DeviceController.h"
+#include "SensorController.h"
 #include "ServiceController.h"
 #include "ActuatorController.h"
 #include "../Logic/EpochPlausibility.h"
 
 // Heating holds its last state across a NaN reading (staying off risks freezing while the sensor is briefly down) but not forever - past this many seconds of continuous staleness the risk flips (a genuinely dead sensor with the heater stuck on is its own hazard), so it forces off instead.
 static const int MAX_HEATING_SENSOR_STALE_SECONDS = 30 * 60;
+
+SemaphoreHandle_t deviceStateMutex = nullptr;
+
+ActuatorStateLock::ActuatorStateLock() { xSemaphoreTakeRecursive(deviceStateMutex, portMAX_DELAY); }
+ActuatorStateLock::~ActuatorStateLock() { xSemaphoreGiveRecursive(deviceStateMutex); }
+
+// Not yet measured on real hardware (no dedicated high-water-mark log for this task yet, unlike NETWORK_TASK_STACK_SIZE) - initController()'s own call depth (rule tree walk, relay/PWM writes, no network/heap-heavy work) is comparable to or shallower than the network task's OTA path, so this starts at half that budget; revisit once a real uxTaskGetStackHighWaterMark reading is available.
+static const uint32_t RELAY_TASK_STACK_SIZE = 8192;
+// Independent of the network/config cycle on purpose - keeps relay decisions responsive to a changed EmergencyStop/manual-override/rule even while apiConfig() is mid-round-trip, without waiting for sensorData to be re-read this often (relaySnapshotGet() just returns the latest completed reading).
+static const uint32_t RELAY_TASK_TICK_MS = 2000;
+static TaskHandle_t relayTask = nullptr;
+
+static void relayTaskLoop(void *)
+{
+    for (;;)
+    {
+        esp_task_wdt_reset();
+        // A single bool read, not wrapped in ActuatorStateLock - see deviceStateMutex's own comment: a torn read of one bool costs at most one stale tick, not a crash, same tolerance main.cpp's loop() already has reading deviceConfig fields directly.
+        if (deviceConfig.enabled)
+        {
+            SensorData snapshot = sensor.relaySnapshotGet();
+            controller.initController(snapshot, device.getEpochSeconds());
+        }
+        else
+        {
+            controller.forceAllRelaysOff();
+        }
+        vTaskDelay(pdMS_TO_TICKS(RELAY_TASK_TICK_MS));
+    }
+}
+
+void ActuatorController::beginRelayTask()
+{
+    // Mutex always created, even for a sensor-only device with no relay task - every ActuatorController
+    // public method takes it unconditionally (forceAllRelaysOff() in particular is called from
+    // main.cpp's loop() disabled/backoff branch regardless of device type), so a null handle here would
+    // crash the very first such call on a sensor-only node instead of hitting its existing, harmless
+    // empty-relayCount no-op.
+    deviceStateMutex = xSemaphoreCreateRecursiveMutex();
+    if (deviceConfig.deviceControllerEnabled)
+    {
+        xTaskCreate(relayTaskLoop, "relay", RELAY_TASK_STACK_SIZE, nullptr, 1, &relayTask);
+    }
+}
+
+TaskHandle_t ActuatorController::relayTaskHandle()
+{
+    return relayTask;
+}
 
 void ActuatorController::setupController(){
 
@@ -92,6 +143,7 @@ namespace
 
 int ActuatorController::computeNextWakeSeconds(time_t epochSeconds, int defaultSleepSeconds) const
 {
+    ActuatorStateLock lock; // reads deviceConfig.configController.rules[] below
     time_t localEpoch = epochSeconds + deviceConfig.utcOffsetSeconds;
     struct tm *localTm = gmtime(&localEpoch);
     int localWeekday = localTm->tm_wday;
@@ -252,6 +304,7 @@ void ActuatorController::reportSafetyLimitTripped(const String &message)
 
 bool ActuatorController::consumeSafetyLimitEvent(String &outMessage)
 {
+    ActuatorStateLock lock;
     if (pendingSafetyEventMessage.length() == 0)
     {
         return false;
@@ -269,6 +322,7 @@ void ActuatorController::reportHardwareFault(const String &message) const
 
 bool ActuatorController::consumeHardwareFaultEvent(String &outMessage)
 {
+    ActuatorStateLock lock;
     if (pendingHardwareFaultMessage.length() == 0)
     {
         return false;
@@ -286,6 +340,7 @@ void ActuatorController::reportSensorStale(const String &message) const
 
 bool ActuatorController::consumeSensorStaleEvent(String &outMessage)
 {
+    ActuatorStateLock lock;
     if (pendingSensorStaleMessage.length() == 0)
     {
         return false;
@@ -353,14 +408,16 @@ void ActuatorController::driveEveryAssignedRelayOff() const
     }
 }
 
-// Called from main.cpp's loop() whenever a disabled/backoff cycle skips buildSensorData()/initController() entirely, so relays stop freezing in whatever state they were last driven to.
+// Called by the relay task whenever deviceConfig.enabled is false, so relays stop freezing in whatever state they were last driven to.
 void ActuatorController::forceAllRelaysOff() const
 {
+    ActuatorStateLock lock;
     driveEveryAssignedRelayOff();
 }
 
 bool ActuatorController::isRelayOn(RelayFunctionType relayFunction) const
 {
+    ActuatorStateLock lock;
     int pins[MAX_RELAY_SLOTS];
     int pinCount = collectPinsForFunction(relayFunction, pins);
     if (pinCount == 0)
@@ -399,6 +456,7 @@ void ActuatorController::recordControllerState(RelayFunctionType function, bool 
 
 int ActuatorController::consumeControllerDataChanges(ControllerDataChange changes[]) const
 {
+    ActuatorStateLock lock;
     int count = pendingControllerDataChangeCount;
     for (int i = 0; i < count; i++)
     {
@@ -410,6 +468,8 @@ int ActuatorController::consumeControllerDataChanges(ControllerDataChange change
 
 void ActuatorController::initController(SensorData sensorData, time_t epochSeconds)
 {
+    // Whole-tick lock, not just the deviceConfig reads below - isRelayOn() called near the end of this function takes it again (recursive-safe, same task), and the on/off decisions written throughout must be internally consistent with each other, not just individually torn-read-safe.
+    ActuatorStateLock lock;
     // Routes through RelayIO so an I2C-expander kit (KC868-A6) works the same as a direct-GPIO one.
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
     int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;

@@ -276,6 +276,9 @@ void setup()
   device.setupController(); // initialize time
   mqtt.begin(device);        // loads mqttConfig.json - no-op if MQTT was never configured
 
+  // Always creates deviceStateMutex; only starts the relay task itself for a controller-enabled device - a sensor-only node has no relays to evaluate, and may deep-sleep (see loop()'s own "relay-driving device must not deep sleep" gate), which a persistent task cannot survive.
+  ActuatorController::beginRelayTask();
+
 #ifdef AGRUMY_KIT_KC868_A6
   if (!display.begin(deviceConfig.configPin))
   {
@@ -288,6 +291,10 @@ void setup()
   esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);        // true: panic-handler reboot on timeout
   esp_task_wdt_add(NULL);                              // watch the Arduino loop task
   esp_task_wdt_add(ServiceController::networkTaskHandle()); // and the persistent network task - it feeds this itself (ServiceController.cpp's networkTaskLoop / OtaController's per-chunk reset)
+  if (ActuatorController::relayTaskHandle() != nullptr)
+  {
+    esp_task_wdt_add(ActuatorController::relayTaskHandle()); // and the relay task, if this device has one - it feeds this itself (ActuatorController.cpp's relayTaskLoop)
+  }
 
   Serial.printf("[Diag] post-boot FreeHeap=%u MaxAllocHeap=%u loopTaskHighWaterMark=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(NULL));
   Serial.println("[Initialization] Finished: ");

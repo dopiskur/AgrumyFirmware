@@ -1357,8 +1357,17 @@ void SensorController::buildSensorData(const DeviceConfig& deviceConfig)
 
     buildSensorDataPayload();
 
-    if(deviceConfig.deviceControllerEnabled){
-        controller.initController(sensorData, device.getEpochSeconds());
+    // The relay task (ActuatorController::beginRelayTask) evaluates rules on its own cadence now, not
+    // inline here - this just hands it a consistent, fully-populated snapshot to pick up next tick.
+    if (deviceConfig.deviceControllerEnabled)
+    {
+        ActuatorStateLock lock;
+        relaySensorDataSnapshot = sensorData;
     }
+}
 
+SensorData SensorController::relaySnapshotGet() const
+{
+    ActuatorStateLock lock;
+    return relaySensorDataSnapshot;
 }

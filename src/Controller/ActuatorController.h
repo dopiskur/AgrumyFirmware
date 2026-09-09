@@ -2,6 +2,9 @@
 #define ActuatorController_H
 #include "Arduino.h"
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 
 #include "../Model/DeviceModel.h"
 #include "../Logic/RelayLogic.h"
@@ -12,6 +15,22 @@
 // Forward declarations instead of includes
 class DeviceController;
 class SensorController;
+
+// Recursive because ActuatorController's own public methods call each other (initController calls
+// isRelayOn) - a plain mutex would deadlock the same task on the second take. Guards every public
+// ActuatorController method's shared state (relay/PWM decisions, pending-event fields) and the
+// deviceConfig fields they read, against the relay task (see beginRelayTask below) running
+// concurrently with loopTask - and guards SensorController's relay-facing sensor snapshot the same
+// way. Created once by beginRelayTask(); every guarded method takes it as its first line via
+// ActuatorStateLock.
+extern SemaphoreHandle_t deviceStateMutex;
+
+// RAII guard over deviceStateMutex.
+struct ActuatorStateLock
+{
+    ActuatorStateLock();
+    ~ActuatorStateLock();
+};
 
 // Must match deviceTypeRelay's DB seed order (1=Ventilation, 2=Light, 3=Heating, 4=Water pump, 5=Screen, 6=Vent) - the Web admin dropdown stores this ID directly into one of ConfigController.relays[].relayFunction. Screen/Vent are POSITIONAL (a target percent, not on/off) - see initController's separate fold for them.
 enum class RelayFunctionType
@@ -44,6 +63,15 @@ class ActuatorController
 {
 public:
     void setupController();
+
+    // Creates deviceStateMutex and the persistent relay task, which ticks initController() on its
+    // own cadence (RELAY_TASK_TICK_MS) independent of the network/config cycle - so a slow apiConfig()
+    // round trip no longer delays relay decisions. Call once from setup(), only for a controller-
+    // capable device: a sensor-only node has no relays to evaluate and may deep-sleep, which a
+    // persistent task cannot survive (main.cpp's loop() already never deep-sleeps a controller-
+    // enabled device for the same reason).
+    static void beginRelayTask();
+    static TaskHandle_t relayTaskHandle();
 
     // epochSeconds: NTP wall-clock time (DeviceController::getEpochSeconds()), needed by the grid-aligned interval formula below.
     void initController(SensorData sensorData, time_t epochSeconds);

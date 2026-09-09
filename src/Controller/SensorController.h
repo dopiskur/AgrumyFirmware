@@ -23,6 +23,8 @@ class SensorController
 
 private:
     SensorData sensorData;
+    // Separate copy from sensorData, updated (under ActuatorStateLock) only once buildSensorData() has fully finished populating sensorData this cycle - the relay task (ActuatorController::beginRelayTask) reads it via relaySnapshotGet() instead of sensorData itself, so it never sees a struct mid-populate.
+    SensorData relaySensorDataSnapshot;
 
     // Looks up (slot, sensorTypeId) in sensorReadTable and calls the matching read function - no-op if nothing matches (unassigned slot, or rainLevel/wind which have no real model yet).
     void dispatchSensorRead(SensorMetricSlot slot, int sensorTypeId);
@@ -121,8 +123,11 @@ public:
     void buildSensorDataPayload();
     void pushSensorData(JsonDocument payload);
 
-    // Roadmap #133's local display reads the last cycle's readings through this instead of duplicating buildSensorData()'s own storage.
+    // Roadmap #133's local display reads the last cycle's readings through this instead of duplicating buildSensorData()'s own storage. loopTask-only (display.update() runs right after buildSensorData() on the same task) - not safe for the relay task, which must use relaySnapshotGet() instead.
     const SensorData &getSensorData() const { return sensorData; }
+
+    // Thread-safe copy of the latest fully-populated sensor reading, for the relay task - see relaySensorDataSnapshot's own comment.
+    SensorData relaySnapshotGet() const;
 };
 
 // The one SensorController instance, defined in main.cpp.

@@ -1017,7 +1017,11 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
             device.reboot(); // boot into the newly saved config
         }
 
-        deviceConfig = *configCandidate;
+        // Tight scope on purpose - the relay task (ActuatorController::beginRelayTask) takes the same lock for its whole tick, so this commit must never be held any longer than the assignment itself.
+        {
+            ActuatorStateLock lock;
+            deviceConfig = *configCandidate;
+        }
         applyEpochFallbackIfCommitted(true, deviceConfig.serverUtcEpoch,
             [&device](long epoch) { device.applyServerEpochFallback((time_t)epoch); });
         Serial.println("[Service] Config hot-applied without reboot (version " + String(deviceConfig.configVersion) + ")");
