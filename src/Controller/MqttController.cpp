@@ -5,6 +5,8 @@
 #include <PubSubClient.h>
 #include "mbedtls/md.h"
 #include <LittleFS.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 #include "MqttController.h"
 #include "DeviceController.h"
@@ -28,6 +30,7 @@ namespace
     WiFiClient persistentPlainClient;
     PubSubClient persistentClient;
     bool persistentClientInitialized = false;
+    SemaphoreHandle_t persistentClientMutex = nullptr;
 
     // 32 raw HMAC-SHA256 bytes -> 64 lowercase hex chars + NUL, same convention as OtaController's sha256ToHex.
     void hmacSha256Hex(const String &key, const String &message, char out[65])
@@ -83,8 +86,14 @@ namespace
     }
 }
 
+MqttClientLock::MqttClientLock() { xSemaphoreTake(persistentClientMutex, portMAX_DELAY); }
+MqttClientLock::~MqttClientLock() { xSemaphoreGive(persistentClientMutex); }
+
 void MqttController::begin(DeviceController& device)
 {
+    // Created unconditionally, even with no mqttConfig.json - poll() runs every loop() cycle regardless of configuration, same reasoning as ActuatorController::beginRelayTask's unconditional mutex.
+    persistentClientMutex = xSemaphoreCreateMutex();
+
     clientId = "Agrumy_" + device.macAddr();
 
     String configJson = device.loadFile("mqttConfig.json");
@@ -183,6 +192,7 @@ void MqttController::beginPersistentIfEnabled(DeviceConfig& config)
 
 bool MqttController::connectPersistentSync(int tenantID, int deviceID)
 {
+    MqttClientLock lock;
     if (!persistentClientInitialized)
     {
         bool useTls = (brokerPort == 8883);
@@ -220,7 +230,12 @@ bool MqttController::connectPersistentSync(int tenantID, int deviceID)
 
 void MqttController::poll()
 {
-    if (persistentCommandChannel && persistentClient.connected())
+    if (!persistentCommandChannel)
+    {
+        return;
+    }
+    MqttClientLock lock;
+    if (persistentClient.connected())
     {
         persistentClient.loop();
     }

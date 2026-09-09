@@ -17,6 +17,14 @@ class DeviceController;
 // dispatched a command the instant the server publishes it, instead of waiting for its next HTTP
 // poll - see beginPersistentIfEnabled()/poll(). A deep-sleeping device cannot use this at all (the
 // connection dies with the sleep), so it always falls back to the normal poll-delivered command path.
+
+// Guards persistentClient against poll() (loopTask) and connectPersistentSync() (network task) touching it at once if AgrumyClient's synchronous enqueue/wait times out mid-connect - same RAII idiom as ActuatorStateLock.
+struct MqttClientLock
+{
+    MqttClientLock();
+    ~MqttClientLock();
+};
+
 class MqttController
 {
 public:
