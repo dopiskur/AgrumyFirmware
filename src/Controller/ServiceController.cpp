@@ -17,6 +17,7 @@
 #include "../Logic/ConfigApplyLogic.h"
 #include "../Logic/NetworkRequestLogic.h"
 #include "MqttController.h"
+#include "InboxController.h"
 
 #include <ArduinoJson.h>
 #include <atomic>
@@ -495,8 +496,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
             } else {
                 // The same admin-set flag isHardResetPending() checks on a 401 also rides along here on an ordinary, successfully-authenticated poll - a healthy device doesn't need the narrow apiId-only path, it just sees this in its next config.
                 if (configCandidate->reset) {
-                    Serial.println("[Service] Hard reset requested by admin - reseting device to defaults...");
-                    device.reset(); // never returns
+                    inbox.handleHardReset("reset flag in config poll", device); // never returns
                 }
 
                 Serial.println("[Service] New config received, saving new config");
@@ -509,7 +509,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
                 fwSha256  = configCandidate->firmwareSha256;
 
                 // Ahead of the regular OTA gate below on purpose: a pending Reboot must fire before anything else this cycle, and a pending ForceOTA gets its own shot even if the version-mismatch gate would otherwise skip it.
-                processPendingCommand(*configCandidate, serviceRequest, device);
+                inbox.handleCommand(*configCandidate, INBOX_FROM_POLL, serviceRequest, device);
             }
         }
     }

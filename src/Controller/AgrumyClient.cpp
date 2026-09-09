@@ -4,6 +4,7 @@
 #include <esp_task_wdt.h>
 #include <WiFiClientSecure.h>
 #include "AgrumyClient.h"
+#include "InboxController.h"
 #include "DeviceController.h"
 #include "ServiceController.h"
 #include "MqttController.h"
@@ -493,8 +494,7 @@ void AgrumyClient::apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequ
         Serial.println("[AgrumyClient] Device failed authentication - checking whether an admin requested a hard reset");
         if (isHardResetPending(serviceRequest, deviceConfig.apiId))
         {
-            Serial.println("[AgrumyClient] Hard reset requested by admin - reseting device to defaults...");
-            device.reset(); // never returns
+            inbox.handleHardReset("HardResetPending after a 401", device); // never returns
         }
         return; // no valid payload to parse below on a 401 - avoid setting apiAuth from an error body
     }

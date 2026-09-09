@@ -118,6 +118,7 @@ void loop()
 #endif
 
 // Roadmap #133 - KC868-A6's dedicated OLED slot only (see platformio.ini's per-env build_src_filter).
+#include "Controller/InboxController.h"
 #ifdef AGRUMY_KIT_KC868_A6
 #include "Controller/DisplayController.h"
 #endif
@@ -192,6 +193,7 @@ void setup()
   Serial.printf("[FS] LittleFS total=%u used=%u bytes\n", LittleFS.totalBytes(), LittleFS.usedBytes());
   // LittleFS.begin(true) above can trigger a format on the format-on-fail branch - the flash subsystem needs time to fully settle before the next access is reliable (empirically confirmed: file reads intermittently fail without this).
   delay(500);
+  inbox.begin();
 
   String configRegistration = device.loadRegistrationWithFallback();
   if (configRegistration.isEmpty())

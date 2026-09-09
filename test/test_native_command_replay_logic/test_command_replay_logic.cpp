@@ -44,15 +44,30 @@ void test_ExpiredByClock_IsReplayed_EvenWithAHigherCommandId(void)
     TEST_ASSERT_TRUE(commandIsReplayed(6, 5, /*expiresAt*/ 1000000000L, /*now*/ 1800000000L));
 }
 
-void test_ClockNotYetPlausible_NeverBlocksOnExpiry(void)
+void test_ClockNotYetPlausible_FailsClosed_DeferredNotAccepted(void)
 {
-    // Device hasn't synced NTP/server-epoch yet - "now" is near-zero, must not treat every command as expired.
-    TEST_ASSERT_FALSE(commandIsReplayed(6, 5, /*expiresAt*/ 1800000000L, /*now*/ 100L));
+    // Device hasn't synced NTP/server-epoch yet - an expiry that can't be checked must not run; the next poll re-delivers it once the clock is trusted.
+    TEST_ASSERT_TRUE(commandIsReplayed(6, 5, /*expiresAt*/ 1800000000L, /*now*/ 100L));
+    TEST_ASSERT_EQUAL_INT(INBOX_REJECT_CLOCK_UNVERIFIABLE, commandInboxDecision(6, 5, 1800000000L, 100L));
 }
 
-void test_UnparseableExpiresAt_NeverBlocksOnExpiry(void)
+void test_UnparseableExpiresAt_FailsClosed(void)
 {
-    TEST_ASSERT_FALSE(commandIsReplayed(6, 5, /*expiresAt*/ 0L, /*now*/ 1800000000L));
+    TEST_ASSERT_TRUE(commandIsReplayed(6, 5, /*expiresAt*/ 0L, /*now*/ 1800000000L));
+    TEST_ASSERT_EQUAL_INT(INBOX_REJECT_NO_EXPIRY, commandInboxDecision(6, 5, 0L, 1800000000L));
+}
+
+void test_Decision_ReportsWhyARejectedCommandWasDropped(void)
+{
+    TEST_ASSERT_EQUAL_INT(INBOX_ACCEPT, commandInboxDecision(6, 5, 2000000000L, 1800000000L));
+    TEST_ASSERT_EQUAL_INT(INBOX_REJECT_ALREADY_PROCESSED, commandInboxDecision(5, 5, 2000000000L, 1800000000L));
+    TEST_ASSERT_EQUAL_INT(INBOX_REJECT_EXPIRED, commandInboxDecision(6, 5, 1000000000L, 1800000000L));
+}
+
+void test_AlreadyProcessed_WinsOverEveryOtherReason(void)
+{
+    // A stale id is dropped for good even when the clock is untrusted - it must never be "deferred" into running later.
+    TEST_ASSERT_EQUAL_INT(INBOX_REJECT_ALREADY_PROCESSED, commandInboxDecision(3, 5, 0L, 100L));
 }
 
 int main(int argc, char **argv)
@@ -65,7 +80,9 @@ int main(int argc, char **argv)
     RUN_TEST(test_LowerOrEqualCommandId_IsReplayed);
     RUN_TEST(test_HigherCommandId_NotReplayed_WhenStillUnexpired);
     RUN_TEST(test_ExpiredByClock_IsReplayed_EvenWithAHigherCommandId);
-    RUN_TEST(test_ClockNotYetPlausible_NeverBlocksOnExpiry);
-    RUN_TEST(test_UnparseableExpiresAt_NeverBlocksOnExpiry);
+    RUN_TEST(test_ClockNotYetPlausible_FailsClosed_DeferredNotAccepted);
+    RUN_TEST(test_UnparseableExpiresAt_FailsClosed);
+    RUN_TEST(test_Decision_ReportsWhyARejectedCommandWasDropped);
+    RUN_TEST(test_AlreadyProcessed_WinsOverEveryOtherReason);
     return UNITY_END();
 }

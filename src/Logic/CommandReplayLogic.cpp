@@ -35,15 +35,24 @@ long isoUtcToEpochSeconds(const char *iso)
     return daysFromCivil(year, month, day) * 86400L + hour * 3600L + minute * 60L + second;
 }
 
-bool commandIsReplayed(int idDeviceCommand, int lastProcessedCommandId, long expiresAtEpochSeconds, long nowEpochSeconds)
+CommandInboxDecision commandInboxDecision(int idDeviceCommand, int lastProcessedCommandId, long expiresAtEpochSeconds, long nowEpochSeconds)
 {
     if (idDeviceCommand <= lastProcessedCommandId)
     {
-        return true;
+        return INBOX_REJECT_ALREADY_PROCESSED;
     }
-    if (nowEpochSeconds < MIN_PLAUSIBLE_EPOCH || expiresAtEpochSeconds <= 0)
+    if (expiresAtEpochSeconds <= 0)
     {
-        return false;
+        return INBOX_REJECT_NO_EXPIRY;
     }
-    return nowEpochSeconds > expiresAtEpochSeconds;
+    if (nowEpochSeconds < MIN_PLAUSIBLE_EPOCH)
+    {
+        return INBOX_REJECT_CLOCK_UNVERIFIABLE;
+    }
+    return nowEpochSeconds > expiresAtEpochSeconds ? INBOX_REJECT_EXPIRED : INBOX_ACCEPT;
+}
+
+bool commandIsReplayed(int idDeviceCommand, int lastProcessedCommandId, long expiresAtEpochSeconds, long nowEpochSeconds)
+{
+    return commandInboxDecision(idDeviceCommand, lastProcessedCommandId, expiresAtEpochSeconds, nowEpochSeconds) != INBOX_ACCEPT;
 }

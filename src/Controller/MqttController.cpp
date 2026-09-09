@@ -9,7 +9,7 @@
 #include "MqttController.h"
 #include "DeviceController.h"
 #include "ServiceController.h"
-#include "Logic/CommandReplayLogic.h"
+#include "InboxController.h"
 
 // Root CA bundle embedded via platformio.ini board_build.embed_files - same bundle ServiceController uses for HTTPS.
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
@@ -29,51 +29,6 @@ namespace
     PubSubClient persistentClient;
     bool persistentClientInitialized = false;
 
-    // Persisted to LittleFS (not RAM-only) so a captured, still-validly-signed message can't be replayed right after
-    // reboot during the implausible-clock window commandIsReplayed() otherwise fails open on - same file-per-counter
-    // pattern as LoRaPrivateController's uplink COUNTER_FILE.
-    const char *LAST_COMMAND_ID_FILE = "/mqttLastProcessedCommandId.dat";
-    int lastProcessedCommandId = 0;
-
-    int loadLastProcessedCommandId()
-    {
-        if (!LittleFS.exists(LAST_COMMAND_ID_FILE))
-        {
-            return 0;
-        }
-        File f = LittleFS.open(LAST_COMMAND_ID_FILE, "r");
-        if (!f || f.size() < 4)
-        {
-            if (f)
-            {
-                f.close();
-            }
-            return 0;
-        }
-        uint32_t value = 0;
-        for (int i = 0; i < 4; i++)
-        {
-            value = (value << 8) | (uint8_t)f.read();
-        }
-        f.close();
-        return (int)value;
-    }
-
-    void saveLastProcessedCommandId(int value)
-    {
-        File f = LittleFS.open(LAST_COMMAND_ID_FILE, "w");
-        if (!f)
-        {
-            return;
-        }
-        uint32_t unsignedValue = (uint32_t)value;
-        for (int shift = 24; shift >= 0; shift -= 8)
-        {
-            f.write((uint8_t)((unsignedValue >> shift) & 0xFF));
-        }
-        f.close();
-    }
-
     // 32 raw HMAC-SHA256 bytes -> 64 lowercase hex chars + NUL, same convention as OtaController's sha256ToHex.
     void hmacSha256Hex(const String &key, const String &message, char out[65])
     {
@@ -91,7 +46,7 @@ namespace
     }
 
     // Runs synchronously inside persistentClient.loop() (our own call, not an ISR) - safe to call
-    // straight into processPendingCommand(), but note that command's own ack POST/OTA work blocks
+    // straight into the inbox, but note that command's own ack POST/OTA work blocks
     // this call until it returns, same as it already blocks the normal poll-driven path.
     void onCommandMessage(char *topic, byte *payload, unsigned int length)
     {
@@ -118,37 +73,19 @@ namespace
             return;
         }
 
-        // A valid signature alone doesn't stop a previously-captured message from being republished later - reject a stale idDeviceCommand or an already-expired expiresAt.
-        if (commandIsReplayed(idDeviceCommand, lastProcessedCommandId, isoUtcToEpochSeconds(expiresAt.c_str()), (long)device.getEpochSeconds()))
-        {
-            Serial.println("[Mqtt] Command message rejected as a replay (stale idDeviceCommand or expired expiresAt)");
-            return;
-        }
-        lastProcessedCommandId = idDeviceCommand;
-        saveLastProcessedCommandId(idDeviceCommand);
-
-        if (actionType == COMMAND_FORCE_CONFIG_SYNC)
-        {
-            // This action type's whole job is refreshing the cached deviceConfig used everywhere else in this switch - acting on it here would just see the same stale data (see ServiceController's own "config already current" case). Polling now instead gets real, current config, and the still-Pending command gets acked/executed normally as part of that same poll's response.
-            Serial.println("[Mqtt] ForceConfigSync received via persistent channel, polling for fresh config now");
-            service.apiConfig(deviceConfig, serviceRequest, device);
-            return;
-        }
-
         deviceConfig.pendingCommand.present = true;
         deviceConfig.pendingCommand.idDeviceCommand = idDeviceCommand;
         deviceConfig.pendingCommand.actionType = actionType;
         copyStr(deviceConfig.pendingCommand.expiresAt, expiresAt.c_str());
         copyStr(deviceConfig.pendingCommand.payload, cmdPayload.c_str());
-        Serial.println("[Mqtt] Command received via persistent channel, dispatching immediately");
-        service.processPendingCommand(deviceConfig, serviceRequest, device);
+        Serial.println("[Mqtt] Command received via persistent channel, handing to the inbox");
+        inbox.handleCommand(deviceConfig, INBOX_FROM_MQTT, serviceRequest, device);
     }
 }
 
 void MqttController::begin(DeviceController& device)
 {
     clientId = "Agrumy_" + device.macAddr();
-    lastProcessedCommandId = loadLastProcessedCommandId();
 
     String configJson = device.loadFile("mqttConfig.json");
     if (configJson.isEmpty())
