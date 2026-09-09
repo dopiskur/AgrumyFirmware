@@ -5,6 +5,7 @@
 #include <RadioLib.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
+#include <cmath>
 #include "mbedtls/base64.h"
 
 namespace
@@ -127,7 +128,10 @@ void LoRaGatewayRelayController::poll(ServiceController &service, ServiceRequest
         return;
     }
 
-    Serial.printf("[LoRaGatewayRelay] Uplink from node=%u len=%u, relaying via WiFi\n", frame.srcAddress, (unsigned)frame.payload.size());
+    // RadioLib reports both against the just-finished receive() call, so the node's own dataSensor row carries the gateway's reception quality alongside the reading, not just a point-in-time diagnostic.
+    int8_t rssi = (int8_t)lround(loRaGatewayRadio.getRSSI());
+    int8_t snr = (int8_t)lround(loRaGatewayRadio.getSNR());
+    Serial.printf("[LoRaGatewayRelay] Uplink from node=%u len=%u rssi=%d snr=%d, relaying via WiFi\n", frame.srcAddress, (unsigned)frame.payload.size(), rssi, snr);
 
     // Own permanent credential, not the shared session apiAuth - RelayUplink authenticates the same way Batch does (DeviceAuth.ApiKeyPolicy).
     serviceRequest.endpoint = "/api/Gateway/RelayUplink";
@@ -137,6 +141,8 @@ void LoRaGatewayRelayController::poll(ServiceController &service, ServiceRequest
     JsonDocument body;
     body["SourceAddress"] = frame.srcAddress;
     body["Payload"] = base64Encode(frame.payload);
+    body["Rssi"] = rssi;
+    body["Snr"] = snr;
 
     flushBufferedRelayUplinks(service, serviceRequest);
     ServiceData result = service.requestPost(body, serviceRequest);

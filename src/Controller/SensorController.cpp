@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
 
@@ -1195,6 +1196,8 @@ void SensorController::buildSensorDataPayload()
     jsonSensorData["wind"]=!isnan(sensorData.wind)? sensorData.wind:  JsonVariant();
     jsonSensorData["ec"]=!isnan(sensorData.ec)? sensorData.ec:  JsonVariant();
     jsonSensorData["weight"]=!isnan(sensorData.weight)? sensorData.weight:  JsonVariant();
+    // Signal quality alongside the reading - null when this board has no WiFi radio up (LoRa-only node, reading instead relayed by a gateway that fills in its own LoRaRssiDbm/LoRaSnrDb server-side).
+    jsonSensorData["wifiRssiDbm"]=(WiFi.status()==WL_CONNECTED)? WiFi.RSSI(): JsonVariant();
     // Computed once - calling getDateTime() twice in one expression let the two calls straddle a second boundary and disagree.
     String dateCreated = device.getDateTime();
     jsonSensorData["dateCreated"]=(dateCreated)!=""? dateCreated:  JsonVariant(); // timestamp for buffering
