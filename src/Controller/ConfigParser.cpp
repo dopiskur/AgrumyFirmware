@@ -3,69 +3,8 @@
 
 #include "ConfigParser.h"
 #include "ServiceController.h"
-
-namespace
-{
-    // Roadmap #396(4) - recursively parses one JSON ConditionNode (api.Models.ConditionNode) into
-    // rule.nodes[], returning its index there, or -1 to reject the WHOLE rule (an unrecognized type,
-    // too many total nodes, or a group with zero/too-many children never stores a partial/broken
-    // tree). `node` stays a valid reference across the recursive calls below - rule.nodes is a
-    // fixed-size array member, never reallocated, so appending further nodes can't invalidate it.
-    int parseConditionNode(JsonObject nodeJson, Rule &rule)
-    {
-        if (rule.nodeCount >= MAX_NODES_PER_RULE)
-        {
-            return -1;
-        }
-        int index = rule.nodeCount;
-        rule.nodeCount++;
-        ConditionNode &node = rule.nodes[index];
-        node.type = nodeJson["type"];
-        switch (node.type)
-        {
-        case NODE_COMPARISON:
-            node.metric = nodeJson["metric"];
-            node.op = nodeJson["operator"];
-            node.value1 = nodeJson["value1"];
-            node.value2 = nodeJson["value2"] | 0.0;
-            node.hysteresis = nodeJson["hysteresis"] | 0.0;
-            return index;
-        case NODE_INTERVAL:
-            node.interval = nodeJson["interval"];
-            node.intervalLength = nodeJson["intervalLength"];
-            return index;
-        case NODE_SCHEDULE:
-            node.daysOfWeek = nodeJson["daysOfWeek"];
-            node.start = nodeJson["start"];
-            node.duration = nodeJson["duration"];
-            return index;
-        case NODE_GROUP:
-        {
-            node.groupOperator = nodeJson["groupOperator"];
-            JsonArray children = nodeJson["children"];
-            if (children.size() == 0 || (int)children.size() > MAX_CHILDREN_PER_GROUP)
-            {
-                return -1;
-            }
-            int childCount = 0;
-            for (JsonObject childJson : children)
-            {
-                int childIndex = parseConditionNode(childJson, rule);
-                if (childIndex < 0)
-                {
-                    return -1;
-                }
-                node.childIndices[childCount] = childIndex;
-                childCount++;
-            }
-            node.childCount = childCount;
-            return index;
-        }
-        default:
-            return -1; // unrecognized node type (e.g. Astronomical/RuleTriggered, which should never reach firmware at all - see DeviceModel.h's NodeType remarks)
-        }
-    }
-}
+#include "../Logic/ConfigParseLogic.h"
+#include "../Logic/SleepScheduleLogic.h"
 
 String ConfigParser::maskApiKeyInJson(const String &json)
 {
@@ -180,7 +119,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.eventlog.error = false;
 
   int serverSchemaVersion = config["schemaVersion"] | 0; // 0 from a server build that predates this field
-  if (serverSchemaVersion > CONFIG_SCHEMA_VERSION)
+  if (isConfigSchemaNewerThanFirmware(serverSchemaVersion, CONFIG_SCHEMA_VERSION))
   {
     Serial.printf("[Device] Config schemaVersion %d is newer than this firmware understands (%d) - some new fields may be silently ignored, consider an OTA update\n", serverSchemaVersion, CONFIG_SCHEMA_VERSION);
   }
@@ -200,7 +139,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 
   // Floored here regardless of server-side validation - a sensor-only device has no controller-side floor to fall back on (ActuatorController::computeNextWakeSeconds only applies to relay-type devices), so 0/negative would otherwise loop with no delay.
   int requestedSleepSeconds = config["sleepSeconds"];
-  currentConfig.sleepSeconds = requestedSleepSeconds < MIN_SLEEP_SECONDS ? MIN_SLEEP_SECONDS : requestedSleepSeconds;
+  currentConfig.sleepSeconds = clampToSleepFloor(requestedSleepSeconds, MIN_SLEEP_SECONDS);
   currentConfig.sleepDeep = config["sleepDeep"];
   currentConfig.loRaGatewayEnabled = config["loRaGatewayEnabled"] | false;
   // Keeps the current offset if an older server doesn't send this key - never silently jump to UTC just because the key was missing.
@@ -277,12 +216,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
         }
 
         Rule candidate;
-        candidate.targetFunction = r["relayFunction"];
-        candidate.targetPercent = r["targetPercent"] | 0; // only meaningful for a positional function (Screen/Vent), ignored otherwise
-        candidate.nodeCount = 0;
-        JsonObject rootJson = r["root"];
-        int rootIndex = rootJson.isNull() ? -1 : parseConditionNode(rootJson, candidate);
-        if (rootIndex < 0)
+        if (!parseRule(r, candidate))
         {
             // Unrecognized node type, too many total nodes, or a group with too many/zero children -
             // reject the WHOLE rule rather than store a partial/broken tree (same spirit as the old
@@ -290,7 +224,6 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
             currentConfig.rulesRejectedCount++;
             continue;
         }
-        candidate.rootIndex = rootIndex;
         currentConfig.configController.rules[currentConfig.configController.ruleCount] = candidate;
         currentConfig.configController.ruleCount++;
     }
