@@ -104,6 +104,7 @@ void loop()
 #include <freertos/task.h>
 
 #include "Model/DeviceModel.h"
+#include "Logic/ConfigApplyLogic.h"
 
 #include "Controller/DeviceController.h"
 #include "Controller/SensorController.h"
@@ -237,7 +238,9 @@ void setup()
     device.registerDevice(configRegistration);
   }
 
-  device.loadConfig(configDefaults, deviceConfig);
+  bool bootConfigOk = device.loadConfig(configDefaults, deviceConfig);
+  applyEpochFallbackIfCommitted(bootConfigOk, deviceConfig.serverUtcEpoch,
+      [](long epoch) { device.applyServerEpochFallback((time_t)epoch); });
 
   serviceRequest.serviceType = device.serviceType(deviceConfig.deviceTypeServiceID, serviceRequest.isHttps);
   serviceRequest.servicePoint = deviceConfig.servicePoint;

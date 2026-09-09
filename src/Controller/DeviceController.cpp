@@ -622,10 +622,6 @@ void DeviceController::removeBufferedFile(String filename)
 bool DeviceController::loadConfig(const String& configJson, DeviceConfig& target)
 {
   ConfigParser::parse(configJson, target);
-  if (target.serverUtcEpoch > 0)
-  {
-    applyServerEpochFallback((time_t)target.serverUtcEpoch);
-  }
   return !target.eventlog.error;
 };
 

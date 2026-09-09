@@ -13,6 +13,7 @@
 #include "OtaController.h"
 #include "../Logic/DiscoveryLogic.h"
 #include "../Logic/HttpDateLogic.h"
+#include "../Logic/ConfigApplyLogic.h"
 #include "../Logic/NetworkRequestLogic.h"
 
 #include <ArduinoJson.h>
@@ -963,6 +964,8 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         }
 
         deviceConfig = *configCandidate;
+        applyEpochFallbackIfCommitted(true, deviceConfig.serverUtcEpoch,
+            [&device](long epoch) { device.applyServerEpochFallback((time_t)epoch); });
         Serial.println("[Service] Config hot-applied without reboot (version " + String(deviceConfig.configVersion) + ")");
         pushEvent(serviceRequest, "ConfigApplied", "version=" + String(deviceConfig.configVersion));
         // Surfaced so an admin actually finds out a rule silently isn't doing what they configured, instead of a quietly-truncated AND/OR chain misbehaving forever.
