@@ -1321,7 +1321,7 @@ void SensorController::pushSensorData(JsonDocument payload){
     }
 }
 
-void SensorController::buildSensorData(DeviceConfig deviceConfig)
+void SensorController::buildSensorData(const DeviceConfig& deviceConfig)
 {
     sensorData.battery=NAN;
     sensorData.temperature=NAN;

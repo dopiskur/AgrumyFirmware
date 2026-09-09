@@ -19,10 +19,9 @@ public:
 
     void errorReport(EventLog eventlog);
 
-    void apiAuthenticate(DeviceConfig deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
+    void apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
     // deviceConfig is a reference so a received config can be hot-applied in place; returns true when that happened (no reboot), and the caller must then re-copy deviceConfig into its per-module value copies.
     bool apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
-    ServiceData apiSensorData(DeviceConfig deviceConfig, ServiceRequest serviceRequest);
 
     // Best-effort, never checked or retried. commandId is included only when >= 0 (alongside EventType="CommandExecuted").
     void pushEvent(ServiceRequest service, String eventType, String message, int commandId = -1);
@@ -52,6 +51,10 @@ public:
 
     // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. Roadmap #133's local display "last sync" page reads this; not set on a 429/error response.
     time_t lastConfigSyncEpoch = 0;
+
+    // Actual HTTP(S) logic, run on a dedicated task by requestPost()/requestGet() - see ServiceController.cpp's networkTaskEntry. Public only so that free function can call it; not part of the intended external API.
+    ServiceData requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service);
+    ServiceData requestGetSync(ServiceRequest service);
 
 private:
     // Queried on a 401 instead of ever self-wiping from a bare failure count - apiId alone (no apiKey/session) so this reaches a device whose apiKey itself is what's broken.

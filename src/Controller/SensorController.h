@@ -117,7 +117,7 @@ public:
     // serviceRequest stays a per-module member (unlike deviceConfig): this one always targets the sensor-data/event endpoints.
     ServiceRequest serviceRequest;
 
-    void buildSensorData(DeviceConfig deviceConfig);
+    void buildSensorData(const DeviceConfig& deviceConfig);
     void buildSensorDataPayload();
     void pushSensorData(JsonDocument payload);
 

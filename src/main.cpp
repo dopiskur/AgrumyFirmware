@@ -101,6 +101,7 @@ void loop()
 #include <ArduinoJson.h>
 #include <esp_task_wdt.h>
 #include <esp_sleep.h>
+#include <freertos/task.h>
 
 #include "Model/DeviceModel.h"
 
@@ -127,8 +128,8 @@ void loop()
 const char *firmware = FIRMWARE_VERSION;
 const String CONFIG_DEFAULTS = "config.json";
 
-// Default 8192-byte loopTask stack overflows under chained TLS handshakes (apiConfig's 401 retry into apiAuthenticate); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE build-flag fix, so SET_LOOP_TASK_STACK_SIZE is used instead. 24576 was enough for that path, but setup()'s own loadConfig/ConfigParser::parse call chain overflowed even 32768. On real esp32dev hardware with a registered, rule-bearing device, 49152 still overflowed deterministically on the FIRST apiConfig() call, specifically inside requestPost()'s TLS handshake (WiFiClientSecure/mbedTLS, isolated via uxTaskGetStackHighWaterMark bisection on the actual device - the watermark stayed completely flat through setup(), loop()'s preamble, and the whole JsonDocument payload build, then crashed once network code ran) - the panic handler's own backtrace is unusable for isolating this (it unwinds the corrupted stack, not the call chain that broke it). 131072 turned out too large - the device produced zero serial output even across repeated clean flashes/resets, consistent with the loopTask's own creation failing (or leaving too little free heap for WiFi/TLS) rather than an application-level crash; 98304 verified stable across a real 4-cycle/185s soak test on the same device/config that previously crashed deterministically on cycle 1 every time.
-SET_LOOP_TASK_STACK_SIZE(98304);
+// Default 8192-byte loopTask stack overflows this app's own call depth (setup()'s ConfigParser::parse chain needs >32768); sdkconfig.h blocks the CONFIG_ARDUINO_LOOP_STACK_SIZE fix. Covers JSON parsing only, not TLS (ServiceController::requestPost/requestGet run on their own dedicated task, see NETWORK_TASK_STACK_SIZE) and not DeviceConfig (heap-allocated, never a stack local - see ServiceController::apiConfig's configCandidate).
+SET_LOOP_TASK_STACK_SIZE(32768);
 
 // Reboots if a loop() cycle wedges before completing. Sized to clear ~4 sequential HTTPClient calls per cycle (config sync, re-auth, retry, sensor push) at the default 5s TCP timeout each, with margin. Independent of server-set sleepSeconds - the inter-cycle sleep is fed separately in loop().
 static const uint32_t WDT_TIMEOUT_SECONDS = 90;
@@ -168,6 +169,7 @@ void setup()
   Serial.begin(115200);
   Serial.println();
   Serial.println("[Initialization started]");
+  Serial.printf("[Diag] sizeof(DeviceConfig)=%u sizeof(Rule)=%u sizeof(ConditionNode)=%u\n", sizeof(DeviceConfig), sizeof(Rule), sizeof(ConditionNode));
 
   // Read (and clear) any core dump before anything else touches flash/WiFi - it has no dependency on either, and the summary is needed by the reboot-outcome reporting block further down.
   String crashSummary = device.consumeCrashSummary();
@@ -232,7 +234,7 @@ void setup()
     device.registerDevice(configRegistration);
   }
 
-  deviceConfig = device.loadConfig(configDefaults);
+  device.loadConfig(configDefaults, deviceConfig);
 
   serviceRequest.serviceType = device.serviceType(deviceConfig.deviceTypeServiceID, serviceRequest.isHttps);
   serviceRequest.servicePoint = deviceConfig.servicePoint;
@@ -280,6 +282,7 @@ void setup()
   esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true); // true: panic-handler reboot on timeout
   esp_task_wdt_add(NULL);                       // watch the Arduino loop task
 
+  Serial.printf("[Diag] post-boot FreeHeap=%u MaxAllocHeap=%u loopTaskHighWaterMark=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(NULL));
   Serial.println("[Initialization] Finished: ");
 }
 
@@ -352,6 +355,7 @@ void loop()
     device.powerRailSecondary(false);
   }
 
+  Serial.printf("[Diag] end-of-cycle FreeHeap=%u MaxAllocHeap=%u loopTaskHighWaterMark=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(NULL));
   Serial.println("[Loop]-----> END <-----[Loop]");
   Serial.println("");
 

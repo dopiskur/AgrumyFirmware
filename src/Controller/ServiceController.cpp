@@ -15,6 +15,30 @@
 #include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
+
+// TLS handshakes need far more stack than loopTask's own budget (see main.cpp's SET_LOOP_TASK_STACK_SIZE comment) - running them on a short-lived dedicated task instead of loopTask itself means that stack is only ever carved out of the heap for the duration of one request, not permanently, leaving mbedTLS's own allocations a much bigger contiguous free block to work with.
+static const uint32_t NETWORK_TASK_STACK_SIZE = 49152;
+
+struct NetworkTaskArgs
+{
+    ServiceController *self;
+    const JsonDocument *jsonBuffer; // null for GET
+    ServiceRequest service;
+    bool isPost;
+    ServiceData result;
+    SemaphoreHandle_t done;
+};
+
+static void networkTaskEntry(void *pvParameters)
+{
+    NetworkTaskArgs *args = static_cast<NetworkTaskArgs *>(pvParameters);
+    args->result = args->isPost
+        ? args->self->requestPostSync(*args->jsonBuffer, args->service)
+        : args->self->requestGetSync(args->service);
+    xSemaphoreGive(args->done);
+    vTaskDelete(NULL);
+}
 
 // Root CA bundle embedded via platformio.ini board_build.embed_files.
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_data_cert_x509_crt_bundle_bin_start");
@@ -50,6 +74,20 @@ String ServiceController::maskSecret(const String &value)
 
 ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, ServiceRequest service)
 {
+    NetworkTaskArgs args;
+    args.self = this;
+    args.jsonBuffer = &jsonBuffer;
+    args.service = service;
+    args.isPost = true;
+    args.done = xSemaphoreCreateBinary();
+    xTaskCreate(networkTaskEntry, "netPost", NETWORK_TASK_STACK_SIZE, &args, 1, NULL);
+    xSemaphoreTake(args.done, portMAX_DELAY);
+    vSemaphoreDelete(args.done);
+    return args.result;
+}
+
+ServiceData ServiceController::requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service)
+{
     ServiceData serviceData;
     String jsonRequest;
 
@@ -66,6 +104,7 @@ ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, Servi
 
         if (service.isHttps)
         {
+            Serial.printf("[Diag] pre-TLS FreeHeap=%u MaxAllocHeap=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
             static WiFiClientSecure secureClient;
             if (deviceConfig.servicePublicKey.length() > 0)
             {
@@ -147,6 +186,20 @@ ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, Servi
 }
 
 ServiceData ServiceController::requestGet(ServiceRequest service)
+{
+    NetworkTaskArgs args;
+    args.self = this;
+    args.jsonBuffer = nullptr;
+    args.service = service;
+    args.isPost = false;
+    args.done = xSemaphoreCreateBinary();
+    xTaskCreate(networkTaskEntry, "netGet", NETWORK_TASK_STACK_SIZE, &args, 1, NULL);
+    xSemaphoreTake(args.done, portMAX_DELAY);
+    vSemaphoreDelete(args.done);
+    return args.result;
+}
+
+ServiceData ServiceController::requestGetSync(ServiceRequest service)
 {
     ServiceData serviceData;
 
@@ -556,7 +609,7 @@ bool ServiceController::isHardResetPending(ServiceRequest serviceRequest, const 
     return !serviceData.eventlog.error && serviceData.payload.indexOf("true") >= 0;
 }
 
-void ServiceController::apiAuthenticate(DeviceConfig deviceConfig, ServiceRequest serviceRequest, DeviceController& device)
+void ServiceController::apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device)
 {
     Serial.println("[Service] apiAuthentication: ");
     serviceRequest.endpoint = serviceEndpoint.apiAuthenticate;
@@ -669,7 +722,8 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     String fwSha256  = deviceConfig.firmwareSha256;
 
     bool receivedNewConfig = !serviceData.payload.isEmpty();
-    DeviceConfig newConfig;
+    // Heap-allocated once for the process lifetime, never on the stack - DeviceConfig is tens of KB (32 Rules x 8 ConditionNodes plus String fields), and a per-cycle stack copy of that is what actually overflowed loopTask, not the TLS handshake.
+    static DeviceConfig *configCandidate = new DeviceConfig();
 
     // An empty body means the server decided nothing changed AND nothing is queued for this device.
     if (!receivedNewConfig) {
@@ -685,15 +739,17 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
             Serial.println("[Service] New config payload failed to parse - ignoring it this cycle");
             receivedNewConfig = false;
         } else {
+            // Seed the candidate with the CURRENT live config so ConfigParser::parse's "|" fallbacks resolve to today's values, then parse into the candidate only - the live deviceConfig stays untouched until the commit below, so a rejected config can never leave it half-overwritten.
+            *configCandidate = deviceConfig;
             // loadConfig() gates on required identity keys (apiId/apiKey/servicePoint) and does no disk I/O, so it runs before saveConfigFile.
-            newConfig = device.loadConfig(serviceData.payload);
-            if (newConfig.eventlog.error) {
-                Serial.println("[Service] New config rejected (code " + String(newConfig.eventlog.errorCode) + "): " + newConfig.eventlog.errorData);
-                pushEvent(serviceRequest, "ConfigSyncFailed", "code=" + String(newConfig.eventlog.errorCode) + " " + newConfig.eventlog.errorData);
+            bool configOk = device.loadConfig(serviceData.payload, *configCandidate);
+            if (!configOk) {
+                Serial.println("[Service] New config rejected (code " + String(configCandidate->eventlog.errorCode) + "): " + configCandidate->eventlog.errorData);
+                pushEvent(serviceRequest, "ConfigSyncFailed", "code=" + String(configCandidate->eventlog.errorCode) + " " + configCandidate->eventlog.errorData);
                 receivedNewConfig = false;
             } else {
                 // The same admin-set flag isHardResetPending() checks on a 401 also rides along here on an ordinary, successfully-authenticated poll - a healthy device doesn't need the narrow apiId-only path, it just sees this in its next config.
-                if (newConfig.reset) {
+                if (configCandidate->reset) {
                     Serial.println("[Service] Hard reset requested by admin - reseting device to defaults...");
                     device.reset(); // never returns
                 }
@@ -702,13 +758,13 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
                 device.saveConfigFile(serviceData.payload); // backs up the old config.json before overwriting it
                 device.waitForFileCommitted("config.json"); // verified, not a bare delay()
 
-                fwFlag    = newConfig.firmwareUpdate;
-                fwVersion = newConfig.firmwareVersion;
-                fwUrl     = newConfig.firmwareUrl;
-                fwSha256  = newConfig.firmwareSha256;
+                fwFlag    = configCandidate->firmwareUpdate;
+                fwVersion = configCandidate->firmwareVersion;
+                fwUrl     = configCandidate->firmwareUrl;
+                fwSha256  = configCandidate->firmwareSha256;
 
                 // Ahead of the regular OTA gate below on purpose: a pending Reboot must fire before anything else this cycle, and a pending ForceOTA gets its own shot even if the version-mismatch gate would otherwise skip it.
-                processPendingCommand(newConfig, serviceRequest, device);
+                processPendingCommand(*configCandidate, serviceRequest, device);
             }
         }
     }
@@ -727,14 +783,15 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     }
 
     if (receivedNewConfig) {
+        // deviceConfig is still the OLD (pre-update) config here - the commit below hasn't run yet - so this is a real diff, not a compare-against-itself.
         // Reboot only when a field tied to boot-time state changed (transport/TLS setup, identity, sleep mode); everything else is read from deviceConfig every cycle and applies without a reboot.
         bool rebootRequired =
-            newConfig.deviceTypeServiceID != deviceConfig.deviceTypeServiceID ||
-            newConfig.servicePoint        != deviceConfig.servicePoint ||
-            newConfig.servicePublicKey    != deviceConfig.servicePublicKey ||
-            newConfig.apiId               != deviceConfig.apiId ||
-            newConfig.apiKey              != deviceConfig.apiKey ||
-            newConfig.sleepDeep           != deviceConfig.sleepDeep;
+            configCandidate->deviceTypeServiceID != deviceConfig.deviceTypeServiceID ||
+            configCandidate->servicePoint        != deviceConfig.servicePoint ||
+            configCandidate->servicePublicKey    != deviceConfig.servicePublicKey ||
+            configCandidate->apiId               != deviceConfig.apiId ||
+            configCandidate->apiKey              != deviceConfig.apiKey ||
+            configCandidate->sleepDeep           != deviceConfig.sleepDeep;
 
         if (rebootRequired) {
             // Feed the crash-loop-guard counter ONLY here, never on the OTA or too-many-failures reboots, so an unrelated reboot cause never falsely triggers a rollback in setup().
@@ -742,7 +799,7 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
             device.reboot(); // boot into the newly saved config
         }
 
-        deviceConfig = newConfig;
+        deviceConfig = *configCandidate;
         Serial.println("[Service] Config hot-applied without reboot (version " + String(deviceConfig.configVersion) + ")");
         pushEvent(serviceRequest, "ConfigApplied", "version=" + String(deviceConfig.configVersion));
         // Surfaced so an admin actually finds out a rule silently isn't doing what they configured, instead of a quietly-truncated AND/OR chain misbehaving forever.

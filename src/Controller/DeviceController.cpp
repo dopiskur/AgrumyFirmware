@@ -614,15 +614,14 @@ void DeviceController::removeBufferedFile(String filename)
   StorageController::removeBufferedFile(filename);
 }
 
-// Mutates the single canonical deviceConfig, not just a local copy.
-DeviceConfig DeviceController::loadConfig(String configJson)
+bool DeviceController::loadConfig(const String& configJson, DeviceConfig& target)
 {
-  ConfigParser::parse(configJson, deviceConfig);
-  if (deviceConfig.serverUtcEpoch > 0)
+  ConfigParser::parse(configJson, target);
+  if (target.serverUtcEpoch > 0)
   {
-    applyServerEpochFallback((time_t)deviceConfig.serverUtcEpoch);
+    applyServerEpochFallback((time_t)target.serverUtcEpoch);
   }
-  return deviceConfig;
+  return !target.eventlog.error;
 };
 
 String DeviceController::serviceType(int deviceServiceTypeID, bool& isHttps)

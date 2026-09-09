@@ -68,11 +68,10 @@ public:
     bool tryReadSerialProvisioning(unsigned long timeoutMs = 5000);
 
     void registerDevice(String configRegistration);
-    DeviceConfig initializeDefaults(DeviceConfig deviceConfig);
     void initializeWifi();
 
-    String buildConfig(DeviceConfig deviceConfig);
-    DeviceConfig loadConfig(String configJson);
+    // Parses configJson into target in place (never returns/copies a DeviceConfig - that struct is tens of KB and must never sit on the stack); target should already hold whatever values omitted JSON keys should fall back to. Returns false when parsing/validation failed (target.eventlog carries the reason) - caller decides whether to commit target to the live config.
+    bool loadConfig(const String& configJson, DeviceConfig& target);
 
     String serviceType(int deviceServiceTypeID, bool& isHttps); // maps deviceServiceTypeID to http/https/mqtt
 

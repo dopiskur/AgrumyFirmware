@@ -38,7 +38,8 @@ void DisplayController::update(const DeviceConfig &config, const SensorData &sen
     {
         return;
     }
-    cachedConfig = config;
+    cachedDeviceID = config.deviceID;
+    cachedFirmwareVersion = config.firmwareVersion;
     cachedSensorData = sensorData;
     cachedRelayOn[0] = controller.isRelayOn(RelayFunctionType::Ventilation);
     cachedRelayOn[1] = controller.isRelayOn(RelayFunctionType::Light);
@@ -82,9 +83,9 @@ void DisplayController::drawIdentityPage()
     oled.setTextColor(SSD1306_WHITE);
     oled.setCursor(0, 0);
     oled.println("Agrumy");
-    oled.printf("Device ID: %d\n", cachedConfig.deviceID);
+    oled.printf("Device ID: %d\n", cachedDeviceID);
     oled.printf("Kit: %s\n", AGRUMY_KIT);
-    oled.printf("FW: %s\n", cachedConfig.firmwareVersion.length() > 0 ? cachedConfig.firmwareVersion.c_str() : "?");
+    oled.printf("FW: %s\n", cachedFirmwareVersion.length() > 0 ? cachedFirmwareVersion.c_str() : "?");
     oled.display();
 }
 

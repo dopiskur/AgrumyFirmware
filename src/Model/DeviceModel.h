@@ -372,6 +372,9 @@ struct DeviceConfig
     int rulesRejectedCount = 0;
 };
 
+// Measured 24128 bytes on real esp32dev hardware - this struct must never be passed/returned by value or declared as a stack local (that's what overflowed loopTask before ServiceController::apiConfig's heap-allocated configCandidate). Ceiling is rounded up from the measured size so a future field addition that blows the budget fails the build instead of a device.
+static_assert(sizeof(DeviceConfig) <= 32768, "DeviceConfig grew past the 32KB ceiling - check for a stack-unsafe growth before raising this");
+
 
 
 struct SensorData

@@ -35,7 +35,9 @@ private:
     int currentPage = 0;
     unsigned long lastPageChangeMs = 0;
 
-    DeviceConfig cachedConfig;
+    // Only the two DeviceConfig fields drawIdentityPage() actually reads - a full DeviceConfig copy here would double this controller's static RAM footprint for nothing.
+    int cachedDeviceID = 0;
+    String cachedFirmwareVersion;
     SensorData cachedSensorData;
     bool cachedRelayOn[4] = {false, false, false, false}; // Ventilation, Light, Heating, WaterPump - same order as ActuatorController's own functions[4]
     time_t cachedLastSyncEpoch = 0;
