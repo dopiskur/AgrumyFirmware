@@ -4,8 +4,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-// Ordering A: the network task finishes first (gives the semaphore, then releases) and the facade's own
-// wait later returns normally - first release() must not free, second must.
+// Ordering A: the task finishes and releases first, the facade's wait returns normally and releases second.
 void test_Release_TaskFirstThenFacade(void)
 {
     std::atomic<int> released{0};
@@ -13,8 +12,7 @@ void test_Release_TaskFirstThenFacade(void)
     TEST_ASSERT_TRUE(networkRequestReleaseShouldFree(released));  // facade's release
 }
 
-// Ordering B: the facade's wait times out and releases first, while the task is still working; the task
-// releases later once it finishes - same two outcomes, reversed order.
+// Ordering B: the facade times out and releases first, the still-working task releases later.
 void test_Release_FacadeFirstThenTask(void)
 {
     std::atomic<int> released{0};
@@ -32,8 +30,7 @@ void test_Enqueue_QueueFull_FailsWithoutBlocking(void)
     TEST_ASSERT_FALSE(networkRequestTryEnqueue([]() { return false; }));
 }
 
-// Models the real queue's fixed length (4, see ServiceController.cpp's NETWORK_QUEUE_LENGTH): the 5th
-// enqueue attempt with 4 already pending must fail immediately, not block.
+// Models NETWORK_QUEUE_LENGTH (4): the 5th enqueue with 4 pending must fail immediately, not block.
 void test_Enqueue_FifthAttemptWithFourPending_Fails(void)
 {
     int pending = 0;

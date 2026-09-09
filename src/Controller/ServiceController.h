@@ -12,8 +12,7 @@
 class DeviceController;
 class SensorController;
 
-// Bundles OtaController::update()'s own parameters so a firmware-update request can travel through the
-// same persistent network task queue as requestPost/requestGet - see ServiceController::firmwareUpdate.
+// OtaController::update()'s parameters, bundled so a firmware update rides the same network task queue as requestPost/requestGet.
 struct OtaParams
 {
     String url;
@@ -26,10 +25,7 @@ struct OtaParams
 class ServiceController
 {
 public:
-    // Creates the persistent network task (one static-stack task owning the single WiFiClientSecure/
-    // HTTPClient, replacing the old per-request xTaskCreate pattern - see ServiceController.cpp's
-    // NETWORK_TASK_STACK_SIZE comment). Call exactly once, from main.cpp's setup(), before anything can
-    // call requestPost/requestGet/firmwareUpdate.
+    // Creates the one persistent network task; call exactly once from setup(), before anything can call requestPost/requestGet/firmwareUpdate.
     static void beginNetworkTask();
     static TaskHandle_t networkTaskHandle();
 
@@ -37,8 +33,7 @@ public:
     ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
 
-    // Runs OtaController::update on the persistent network task, same TLS-stack-reuse rationale as
-    // requestPost/requestGet. True only once the image is fully downloaded+verified (caller reboots).
+    // OtaController::update on the network task; true only once the image is downloaded and verified (caller reboots).
     bool firmwareUpdate(const OtaParams& params);
 
     void errorReport(EventLog eventlog);

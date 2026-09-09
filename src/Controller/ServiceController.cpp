@@ -23,30 +23,16 @@
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 
-// One persistent task, created once in setup() (ServiceController::beginNetworkTask) and never deleted, runs
-// every HTTP(S) call and OTA download - replaces xTaskCreate-ing a fresh task per request, whose stack the idle
-// task had not always reclaimed before the next request created another. Sized from measured watermarks
-// (esp32dev, real api.agrumy.com TLS POSTs and a GitHub OTA download): peak use ~6KB, so this leaves ~2.5x
-// headroom; every KB here is a KB mbedTLS cannot use for its ~45KB handshake working set. Heap-backed, not
-// xTaskCreateStatic/.bss: esp32dev's fixed dram0_0_seg (~122KB, shared with every global) has no room for it.
-static const uint32_t NETWORK_TASK_STACK_SIZE = 16384;
+static const uint32_t NETWORK_TASK_STACK_SIZE = 16384; // measured peak ~7.6KB (OTA) - every KB here is one mbedTLS's ~45KB handshake cannot use; heap-backed, esp32dev's dram0_0_seg cannot hold it statically
 static TaskHandle_t networkTask = nullptr;
 
 static const UBaseType_t NETWORK_QUEUE_LENGTH = 4;
 static QueueHandle_t networkQueue = nullptr;
 
-// Facade wait timeout = HTTPClient's own unmodified connect+read timeouts (HTTPCLIENT_DEFAULT_TCP_TIMEOUT,
-// 5s each) plus a 10s margin for queueing/scheduling jitter - derived from settings already in use, not a
-// fresh magic number.
-static const uint32_t NETWORK_REQUEST_TIMEOUT_MS = 2 * HTTPCLIENT_DEFAULT_TCP_TIMEOUT + 10000;
-// Short - only long enough to hand off to the task under normal load. A full queue must fail fast; a
-// caller should never wait anywhere near the full request timeout just to learn it couldn't be queued.
-static const uint32_t NETWORK_ENQUEUE_TIMEOUT_MS = 200;
+static const uint32_t NETWORK_REQUEST_TIMEOUT_MS = 2 * HTTPCLIENT_DEFAULT_TCP_TIMEOUT + 10000; // HTTPClient's own connect+read timeouts plus a queueing margin
+static const uint32_t NETWORK_ENQUEUE_TIMEOUT_MS = 200; // a full queue must fail fast, not wait anywhere near the request timeout
 
-// Heap-allocated (see requestPost/requestGet/firmwareUpdate below): a facade timeout can leave the task
-// still working on this after the facade itself has moved on, so it must outlive whichever party finishes
-// first. released/releaseNetworkRequest() below implement the "whoever's second frees it" handshake
-// (Logic/NetworkRequestLogic.h) that makes that safe.
+// Heap-allocated: a facade timeout leaves the task still working on it, so whoever releases second frees it (Logic/NetworkRequestLogic.h).
 struct NetworkRequest
 {
     enum Kind { Post, Get, Ota } kind;
@@ -68,10 +54,7 @@ static void releaseNetworkRequest(NetworkRequest *req)
     }
 }
 
-// Single WiFiClientSecure the network task owns for its whole lifetime, shared by requestPostSync and
-// requestGetSync - nothing outside this task ever touches it. Reused (not re-constructed) across requests
-// on purpose, same "one instance, not one per request" reasoning as the task itself.
-static WiFiClientSecure networkSecureClient;
+static WiFiClientSecure networkSecureClient; // owned by the network task alone, shared by requestPostSync/requestGetSync - nothing outside the task touches it
 
 static void networkTaskLoop(void *)
 {
@@ -414,9 +397,7 @@ bool ServiceController::firmwareUpdate(const OtaParams& params)
         return false;
     }
 
-    // Bounded polling, not a bare portMAX_DELAY wait - firmwareUpdate() is always called from loopTask,
-    // which is itself watchdog-watched, and a multi-minute download must not starve loopTask's own
-    // watchdog while it waits on a task that IS still making progress.
+    // Polled, not portMAX_DELAY: the calling loopTask is watchdog-watched too and a multi-minute download must not starve it.
     while (xSemaphoreTake(req->done, pdMS_TO_TICKS(5000)) != pdTRUE)
     {
         esp_task_wdt_reset();
@@ -680,7 +661,7 @@ static void addHeapDiagnostics(JsonDocument &payload)
     payload["MinFreeHeap"] = ESP.getMinFreeHeap();
     payload["MaxAllocHeap"] = ESP.getMaxAllocHeap();
     payload["StackHighWaterMark"] = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
-    // Same margin, for the persistent network task instead of the caller (loop task) - a low value here means TLS/OTA traffic is close to overflowing its own static 49152-byte stack.
+    // Same margin for the network task (NETWORK_TASK_STACK_SIZE) - it, not loopTask, runs every TLS handshake and OTA download.
     payload["NetworkStackHighWaterMark"] = (uint32_t)uxTaskGetStackHighWaterMark(ServiceController::networkTaskHandle());
 }
 
