@@ -26,7 +26,7 @@ CONTRACT = {
     "register.request.schema.json": {
         "mode": "sends_exact",
         "src": "DeviceController.cpp :: registerDevice()  ->  payload[...]",
-        "keys": ["macAddress", "email", "devicePin", "serviceType"],
+        "keys": ["macAddress", "email", "devicePin", "serviceType", "displayName"],
     },
 
     "authenticate.request.schema.json": {

@@ -26,7 +26,8 @@ except ImportError:
     sys.exit("jsonschema not installed - run:  pip install -r tools/contract-check/requirements.txt")
 
 HERE = Path(__file__).resolve().parent
-SCHEMA_DIR = HERE.parent.parent / "contracts" / "device-api"
+# --schema-dir <path> checks the same field lists against another copy of the schemas (CI points it at a fresh download from AgrumyService master).
+SCHEMA_DIR = Path(sys.argv[sys.argv.index("--schema-dir") + 1]) if "--schema-dir" in sys.argv else HERE.parent.parent / "contracts" / "device-api"
 
 sys.path.insert(0, str(HERE))
 from firmware_fields import CONTRACT  # noqa: E402
@@ -47,15 +48,18 @@ def dummy_for(prop_schema: dict):
     types = prop_schema.get("type", "string")
     if isinstance(types, str):
         types = [types]
+    if "enum" in prop_schema:
+        return prop_schema["enum"][0]
     if "pattern" in prop_schema:
         # only pattern in the contract is ^[0-9]+$
         return "1" if re.fullmatch(prop_schema["pattern"], "1") else "x"
-    if "string" in types:
-        return "x"
+    # A generated request schema lists "string" next to a number type (server accepts numeric strings) - the number is the real wire form.
     if "integer" in types:
         return 1
     if "number" in types:
         return 1.0
+    if "string" in types:
+        return "x"
     if "boolean" in types:
         return True
     if "array" in types:

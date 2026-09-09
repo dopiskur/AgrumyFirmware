@@ -1,7 +1,9 @@
 name: Contract check
 
 # Validates the hand-maintained firmware field lists in tools/contract-check/
-# against the copied JSON Schemas in contracts/device-api/ (roadmap #5).
+# against the JSON Schemas in contracts/device-api/ - first the committed copy,
+# then a fresh download of AgrumyService master's generated files, so an API-side
+# DTO change surfaces here before anyone re-syncs the copy.
 #
 # Kept as its own workflow (separate from the PlatformIO build) so it stays
 # fast and does not conflict-merge with build.yml.
@@ -15,11 +17,22 @@ jobs:
   contract-check:
     runs-on: ubuntu-latest
     steps:
-      # Roadmap #121: SHA-pinned (same practice as release.yml/build.yml) - a moving major tag
+      # SHA-pinned (same practice as release.yml/build.yml) - a moving major tag
       # could be repointed at anything; the pinned commit is exactly what was reviewed.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.x'
       - run: pip install -r tools/contract-check/requirements.txt
-      - run: python tools/contract-check/check_contract.py
+      - name: Committed schema copy
+        run: python tools/contract-check/check_contract.py
+      - name: Download AgrumyService master schemas
+        run: python tools/contract-check/sync_schemas.py --dest /tmp/upstream-contract
+      - name: Warn when the committed copy is behind upstream
+        run: |
+          if ! diff -rq contracts/device-api /tmp/upstream-contract --exclude=README.md >/dev/null; then
+            echo "::warning::contracts/device-api differs from AgrumyService master - run: python tools/contract-check/sync_schemas.py"
+            diff -r contracts/device-api /tmp/upstream-contract --exclude=README.md || true
+          fi
+      - name: Live upstream schemas
+        run: python tools/contract-check/check_contract.py --schema-dir /tmp/upstream-contract
