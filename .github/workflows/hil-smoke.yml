@@ -1,0 +1,57 @@
+name: HIL smoke test
+
+# One real ESP32 on a self-hosted runner: flash the release-style build, then prove it boots,
+# registers/heartbeats on the test server, pushes telemetry, executes a command and survives a
+# ForceOTA onto the same version - the "compiles but doesn't boot" class no native test can see.
+#
+# Runs after every "Firmware release" workflow and on demand. Needs a runner with the labels
+# below, PlatformIO in PATH, the board on AGRUMY_HIL_PORT, and repo secrets/vars:
+#   vars.AGRUMY_HIL_PORT   e.g. COM6 or /dev/ttyUSB0
+#   vars.AGRUMY_HIL_API    e.g. https://api.agrumy.com   (test/alfa server, never production)
+#   secrets.AGRUMY_HIL_LOGIN / secrets.AGRUMY_HIL_PASSWORD   a Global admin (firmware upload)
+# See tools/hil/README.md for the runner setup.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: PlatformIO environment to flash
+        default: esp32dev
+      skip_ota:
+        description: skip the ForceOTA step
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: ["Firmware release"]
+    types: [completed]
+
+concurrency:
+  group: hil-bench
+  cancel-in-progress: false
+
+jobs:
+  hil:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, agrumy-hil]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # git describe needs the tags for FIRMWARE_VERSION
+      - run: pip install -r tools/hil/requirements.txt
+      - name: Flash and verify on the bench
+        env:
+          AGRUMY_HIL_LOGIN: ${{ secrets.AGRUMY_HIL_LOGIN }}
+          AGRUMY_HIL_PASSWORD: ${{ secrets.AGRUMY_HIL_PASSWORD }}
+        run: >
+          python tools/hil/hil_smoke.py
+          --port "${{ vars.AGRUMY_HIL_PORT }}"
+          --api "${{ vars.AGRUMY_HIL_API }}"
+          --env "${{ github.event.inputs.environment || 'esp32dev' }}"
+          ${{ github.event.inputs.skip_ota == 'true' && '--skip-ota' || '' }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: hil-serial-log
+          path: .pio/hil/serial.log
+          if-no-files-found: ignore
