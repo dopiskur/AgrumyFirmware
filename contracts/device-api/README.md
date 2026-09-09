@@ -3,7 +3,7 @@
 These 7 JSON Schema files are a **copy** of the source-of-truth in the API repo:
 
 > **Source:** `dopiskur/AgrumyService`, path `contracts/device-api/`
-> **Copied from commit:** `e5bf3ce` (`master`) - config.request.schema.json re-synced for the optional heap/stack diagnostic fields (MinFreeHeap, MaxAllocHeap, StackHighWaterMark, NetworkStackHighWaterMark, ConfigSchemaVersion); the other files were already current
+> **Copied from commit:** `7511709` (`master`) - config/register.response re-synced after the dead `reboot` flag was dropped on both sides; the other files were already current
 
 We copy rather than submodule because the schemas change rarely (only when the
 firmware<->API payloads change) and a submodule would add init/update friction to

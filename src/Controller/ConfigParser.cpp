@@ -150,7 +150,6 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.batteryEnabled = config["batteryEnabled"];
   currentConfig.enabled = config["enabled"];
   currentConfig.debug = config["debug"];
-  currentConfig.reboot = config["reboot"];
   currentConfig.reset = config["reset"];
   currentConfig.emergencyStop = config["emergencyStop"] | false;
   currentConfig.firmwareUpdate = config["firmwareUpdate"];

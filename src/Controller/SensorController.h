@@ -49,7 +49,6 @@ private:
     void sensor_analog_voltage(); // SensorTypeIds::AnalogVoltage, VoltageDivider
     void sensor_battery_max17048(); // SensorTypeIds::Max17048
     void sensor_analog_moist();   // SensorTypeIds::AnalogMoisture
-    void sensor_liquid_PH(); // unavailable
     void sensor_analog_waterLevel(); // SensorTypeIds::AnalogWaterLevel
     void sensor_rainLevel(); // unavailable
 

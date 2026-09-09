@@ -494,7 +494,7 @@ void DeviceController::registerDevice(String configRegistration)
   String servicePoint = config["servicePoint"];
   ServiceRequest serviceRequest;
   // Bootstrap call carrying email+PIN before any server config exists, so force HTTPS.
-  serviceRequest.serviceType = serviceType(1, serviceRequest.isHttps);
+  serviceRequest.serviceType = serviceType(ServiceTypeIds::Https, serviceRequest.isHttps);
   serviceRequest.servicePoint = servicePoint;
   serviceRequest.endpoint = serviceEndpoint.apiRegister;
 
@@ -631,15 +631,15 @@ String DeviceController::serviceType(int deviceServiceTypeID, bool& isHttps)
 
   switch (deviceServiceTypeID)
   {
-  case 0:
+  case ServiceTypeIds::Http:
     serviceType = "http://";
     isHttps = false;
     break;
-  case 1:
+  case ServiceTypeIds::Https:
     serviceType = "https://";
     isHttps = true;
     break;
-  case 2:
+  case ServiceTypeIds::Mqtt:
     serviceType = "mqtt://";
     isHttps = false;
     break;

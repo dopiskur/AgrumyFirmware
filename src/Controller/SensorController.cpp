@@ -49,6 +49,7 @@
 #include <esp_task_wdt.h>
 
 #include "SensorController.h"
+#include "../Logic/SensorWarmupLogic.h"
 #include "DeviceController.h"
 #include "ServiceController.h"
 #include "ActuatorController.h"
@@ -290,7 +291,15 @@ void SensorController::setupSensor()
         }
     }
 
-    delay(5000);
+    const ConfigSensor& c = deviceConfig.configSensor;
+    const int selected[] = { c.sensorBattery, c.sensorTemp, c.sensorTempSoil, c.sensorHumid, c.sensorMoist, c.sensorLight, c.sensorCo2, c.sensorTvoc,
+                             c.sensorBarometer, c.sensorPH, c.sensorRainLevel, c.sensorWaterLevel, c.sensorWind, c.sensorEc, c.sensorWeight };
+    const unsigned long warmupMs = sensorWarmupMs(selected, sizeof(selected) / sizeof(selected[0]));
+    if (warmupMs > 0)
+    {
+        Serial.printf("[Sensor setup] Waiting %lu ms for the slowest selected driver's first valid sample\n", warmupMs);
+        delay(warmupMs);
+    }
 }
 
 namespace
@@ -1131,10 +1140,6 @@ void SensorController::sensor_analog_moist()
     Serial.println();
 }
 void SensorController::sensor_Wind()
-{
-}
-
-void SensorController::sensor_liquid_PH()
 {
 }
 

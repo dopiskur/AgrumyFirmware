@@ -1,10 +1,11 @@
 #ifndef DATASTRUCTURE_H
 #define DATASTRUCTURE_H
 #include "Arduino.h"
+#include "ServiceTypeIds.h"
 
 struct DeviceDefaults {
     String servicePoint = "api.agrumy.com";
-    int serviceType = 1; // 0 http, 1 https, 2 mqtt
+    int serviceType = ServiceTypeIds::Https;
 };
 
 
@@ -355,7 +356,6 @@ struct DeviceConfig
     bool batteryEnabled;
     bool enabled;
     bool debug;           // 0 serial print disabled, 1 serial print enabled
-    bool reboot;
     bool reset;
     bool emergencyStop; // tenant-wide fail-closed switch (roadmap #230) - forces every relay off ahead of any rule, independent of configController.relayEnabled
 
