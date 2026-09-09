@@ -181,7 +181,7 @@ void MqttController::begin(DeviceController& device)
 }
 
 // Fresh TCP+TLS connection per call, no persistent session - matches this firmware's per-cycle connect model.
-bool MqttController::publish(const String& topic, const String& payload)
+bool MqttController::publishSync(const String& topic, const String& payload)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
@@ -226,9 +226,10 @@ void MqttController::publishSensorData(DeviceConfig& config, JsonDocument& senso
     String topic = "agrumy/" + String(config.tenantID) + "/" + String(config.deviceID) + "/sensordata";
     String payload;
     serializeJson(sensorJson, payload);
-    publish(topic, payload);
+    service.mqttPublish(topic, payload);
 }
 
+// Cheap checks only, safe on loopTask - the actual TLS connect+subscribe runs on the network task via connectPersistentSync, same reasoning as requestPost never touching TLS on loopTask directly.
 void MqttController::beginPersistentIfEnabled(DeviceConfig& config)
 {
     if (!persistentCommandChannel || brokerHost.isEmpty() || WiFi.status() != WL_CONNECTED)
@@ -240,6 +241,11 @@ void MqttController::beginPersistentIfEnabled(DeviceConfig& config)
         return; // already up, nothing to do
     }
 
+    service.mqttConnectPersistent(config.tenantID, config.deviceID);
+}
+
+bool MqttController::connectPersistentSync(int tenantID, int deviceID)
+{
     if (!persistentClientInitialized)
     {
         bool useTls = (brokerPort == 8883);
@@ -266,12 +272,13 @@ void MqttController::beginPersistentIfEnabled(DeviceConfig& config)
     if (!connected)
     {
         Serial.printf("[Mqtt] Persistent connect failed, state=%d\n", persistentClient.state());
-        return;
+        return false;
     }
 
-    String topic = "agrumy/" + String(config.tenantID) + "/" + String(config.deviceID) + "/command";
+    String topic = "agrumy/" + String(tenantID) + "/" + String(deviceID) + "/command";
     persistentClient.subscribe(topic.c_str());
     Serial.println("[Mqtt] Persistent command channel connected, subscribed to " + topic);
+    return true;
 }
 
 void MqttController::poll()

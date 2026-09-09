@@ -15,6 +15,7 @@
 #include "../Logic/HttpDateLogic.h"
 #include "../Logic/ConfigApplyLogic.h"
 #include "../Logic/NetworkRequestLogic.h"
+#include "MqttController.h"
 
 #include <ArduinoJson.h>
 #include <atomic>
@@ -35,12 +36,16 @@ static const uint32_t NETWORK_ENQUEUE_TIMEOUT_MS = 200; // a full queue must fai
 // Heap-allocated: a facade timeout leaves the task still working on it, so whoever releases second frees it (Logic/NetworkRequestLogic.h).
 struct NetworkRequest
 {
-    enum Kind { Post, Get, Ota } kind;
+    enum Kind { Post, Get, Ota, MqttPublish, MqttConnect } kind;
     ServiceRequest service;
     const JsonDocument *payload = nullptr; // Post only - points into the caller's own stack frame, valid for as long as requestPost() itself blocks waiting on done
     OtaParams ota; // Ota only
     ServiceData result; // Post/Get only
-    bool ok = false; // Ota only - OtaController::update()'s own bool result
+    bool ok = false; // Ota/MqttPublish/MqttConnect only - each Sync method's own bool result
+    String mqttTopic; // MqttPublish only
+    String mqttPayload; // MqttPublish only
+    int mqttTenantID = 0; // MqttConnect only
+    int mqttDeviceID = 0; // MqttConnect only
     SemaphoreHandle_t done = nullptr;
     std::atomic<int> released{0};
 };
@@ -78,6 +83,12 @@ static void networkTaskLoop(void *)
             break;
         case NetworkRequest::Ota:
             req->ok = OtaController::update(req->ota.url, req->ota.isHttps, req->ota.servicePublicKey, req->ota.servicePoint, req->ota.expectedSha256);
+            break;
+        case NetworkRequest::MqttPublish:
+            req->ok = mqtt.publishSync(req->mqttTopic, req->mqttPayload);
+            break;
+        case NetworkRequest::MqttConnect:
+            req->ok = mqtt.connectPersistentSync(req->mqttTenantID, req->mqttDeviceID);
             break;
         }
 
@@ -402,6 +413,68 @@ bool ServiceController::firmwareUpdate(const OtaParams& params)
     {
         esp_task_wdt_reset();
     }
+    bool ok = req->ok;
+    releaseNetworkRequest(req);
+    return ok;
+}
+
+bool ServiceController::mqttPublish(const String& topic, const String& payload)
+{
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::MqttPublish;
+    req->mqttTopic = topic;
+    req->mqttPayload = payload;
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[Service] mqttPublish: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return false;
+    }
+
+    if (xSemaphoreTake(req->done, pdMS_TO_TICKS(NETWORK_REQUEST_TIMEOUT_MS)) != pdTRUE)
+    {
+        Serial.println("[Service] mqttPublish: network task did not respond in time");
+        releaseNetworkRequest(req);
+        return false;
+    }
+
+    bool ok = req->ok;
+    releaseNetworkRequest(req);
+    return ok;
+}
+
+bool ServiceController::mqttConnectPersistent(int tenantID, int deviceID)
+{
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::MqttConnect;
+    req->mqttTenantID = tenantID;
+    req->mqttDeviceID = deviceID;
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[Service] mqttConnectPersistent: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return false;
+    }
+
+    if (xSemaphoreTake(req->done, pdMS_TO_TICKS(NETWORK_REQUEST_TIMEOUT_MS)) != pdTRUE)
+    {
+        Serial.println("[Service] mqttConnectPersistent: network task did not respond in time");
+        releaseNetworkRequest(req);
+        return false;
+    }
+
     bool ok = req->ok;
     releaseNetworkRequest(req);
     return ok;

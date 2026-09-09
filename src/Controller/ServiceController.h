@@ -36,6 +36,10 @@ public:
     // OtaController::update on the network task; true only once the image is downloaded and verified (caller reboots).
     bool firmwareUpdate(const OtaParams& params);
 
+    // MqttController::publishSync/connectPersistentSync on the network task - same "TLS handshake never on loopTask" discipline as requestPost, so an MQTT TLS session and an HTTPS one never run concurrently and fight over heap.
+    bool mqttPublish(const String& topic, const String& payload);
+    bool mqttConnectPersistent(int tenantID, int deviceID);
+
     void errorReport(EventLog eventlog);
 
     void apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);

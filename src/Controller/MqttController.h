@@ -33,7 +33,17 @@ public:
 
     // Pumps the persistent client's receive loop so a subscribed command message is actually
     // delivered to the callback - call this repeatedly during any idle/delay window, never just once.
+    // Reads an already-open socket only, no TLS handshake - safe on loopTask, unlike the two Sync
+    // methods below.
     void poll();
+
+    // Actual MQTT TLS connect+publish/connect+subscribe work, run ONLY on the persistent network
+    // task (ServiceController.cpp's networkTaskLoop) - same "TLS handshake never on loopTask"
+    // discipline as ServiceController::requestPostSync. Public only so that free function can call
+    // them; not part of the intended external API. See ServiceController::mqttPublish/
+    // mqttConnectPersistent for the loopTask-side facades that actually enqueue this work.
+    bool publishSync(const String& topic, const String& payload);
+    bool connectPersistentSync(int tenantID, int deviceID);
 
 private:
     String clientId;
@@ -42,8 +52,6 @@ private:
     String username;
     String password;
     bool persistentCommandChannel = false;
-
-    bool publish(const String& topic, const String& payload);
 };
 
 // The one MqttController instance, defined in main.cpp.
