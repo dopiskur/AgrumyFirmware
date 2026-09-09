@@ -138,8 +138,8 @@ namespace
         deviceConfig.pendingCommand.present = true;
         deviceConfig.pendingCommand.idDeviceCommand = idDeviceCommand;
         deviceConfig.pendingCommand.actionType = actionType;
-        deviceConfig.pendingCommand.expiresAt = expiresAt;
-        deviceConfig.pendingCommand.payload = cmdPayload;
+        copyStr(deviceConfig.pendingCommand.expiresAt, expiresAt.c_str());
+        copyStr(deviceConfig.pendingCommand.payload, cmdPayload.c_str());
         Serial.println("[Mqtt] Command received via persistent channel, dispatching immediately");
         service.processPendingCommand(deviceConfig, serviceRequest, device);
     }

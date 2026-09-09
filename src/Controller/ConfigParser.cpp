@@ -95,7 +95,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     Serial.println(error.c_str());
     currentConfig.eventlog.error = true;
     currentConfig.eventlog.errorCode = 20; // 10 is reserved for registerDevice's own gate
-    currentConfig.eventlog.errorData = error.c_str();
+    copyStr(currentConfig.eventlog.errorData, error.c_str());
 
     return;
   }
@@ -112,7 +112,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     Serial.println("[Device] Load Config: missing required apiId/apiKey/servicePoint - rejecting (contract drift or malformed payload), keeping current config");
     currentConfig.eventlog.error = true;
     currentConfig.eventlog.errorCode = 21; // 20 is deserializeJson failure, 10 is reserved for registerDevice's own gate
-    currentConfig.eventlog.errorData = "missing apiId/apiKey/servicePoint";
+    copyStr(currentConfig.eventlog.errorData, "missing apiId/apiKey/servicePoint");
     return;
   }
   // currentConfig is re-parsed in place on every call, so a failure flagged above must not linger into the next call that succeeds.
@@ -132,10 +132,10 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.deviceFarmUnitZoneID = config["deviceFarmUnitZoneID"];
   currentConfig.deviceTypeServiceID = config["deviceTypeServiceID"]; // 0 http, 1 https, 2 mqtt
 
-  currentConfig.apiId = apiId;
-  currentConfig.apiKey = apiKey;
-  currentConfig.servicePoint = servicePoint;
-  currentConfig.servicePublicKey = servicePublicKey;
+  copyStr(currentConfig.apiId, apiId.c_str());
+  copyStr(currentConfig.apiKey, apiKey.c_str());
+  copyStr(currentConfig.servicePoint, servicePoint.c_str());
+  copyStr(currentConfig.servicePublicKey, servicePublicKey.c_str());
 
   // Floored here regardless of server-side validation - a sensor-only device has no controller-side floor to fall back on (ActuatorController::computeNextWakeSeconds only applies to relay-type devices), so 0/negative would otherwise loop with no delay.
   int requestedSleepSeconds = config["sleepSeconds"];
@@ -153,9 +153,9 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.reset = config["reset"];
   currentConfig.emergencyStop = config["emergencyStop"] | false;
   currentConfig.firmwareUpdate = config["firmwareUpdate"];
-  currentConfig.firmwareVersion = config["firmwareVersion"] | String("");
-  currentConfig.firmwareUrl = config["firmwareUrl"] | String("");
-  currentConfig.firmwareSha256 = config["firmwareSha256"] | String("");
+  copyStr(currentConfig.firmwareVersion, config["firmwareVersion"] | "");
+  copyStr(currentConfig.firmwareUrl, config["firmwareUrl"] | "");
+  copyStr(currentConfig.firmwareSha256, config["firmwareSha256"] | "");
 
   JsonVariant pendingCommandJson = config["pendingCommand"];
   if (pendingCommandJson.isNull())
@@ -167,8 +167,8 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     currentConfig.pendingCommand.present = true;
     currentConfig.pendingCommand.idDeviceCommand = pendingCommandJson["idDeviceCommand"];
     currentConfig.pendingCommand.actionType = pendingCommandJson["actionType"];
-    currentConfig.pendingCommand.expiresAt = pendingCommandJson["expiresAt"] | String("");
-    currentConfig.pendingCommand.payload = pendingCommandJson["payload"] | String("");
+    copyStr(currentConfig.pendingCommand.expiresAt, pendingCommandJson["expiresAt"] | "");
+    copyStr(currentConfig.pendingCommand.payload, pendingCommandJson["payload"] | "");
   }
 
   if (currentConfig.deviceSensorEnabled)

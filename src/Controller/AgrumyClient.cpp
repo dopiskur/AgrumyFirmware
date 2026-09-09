@@ -134,7 +134,7 @@ static ServiceData buildQueueFullError()
     ServiceData result;
     result.eventlog.error = true;
     result.eventlog.errorCode = 1001;
-    result.eventlog.errorData = "Network task queue full";
+    copyStr(result.eventlog.errorData, "Network task queue full");
     return result;
 }
 
@@ -143,7 +143,7 @@ static ServiceData buildTimeoutError()
     ServiceData result;
     result.eventlog.error = true;
     result.eventlog.errorCode = 1002;
-    result.eventlog.errorData = "Network task did not respond in time";
+    copyStr(result.eventlog.errorData, "Network task did not respond in time");
     return result;
 }
 
@@ -197,10 +197,10 @@ ServiceData AgrumyClient::requestPostSync(const JsonDocument& jsonBuffer, Servic
         if (service.isHttps)
         {
             Serial.printf("[Diag] pre-TLS FreeHeap=%u MaxAllocHeap=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-            if (deviceConfig.servicePublicKey.length() > 0)
+            if (deviceConfig.servicePublicKey[0] != 0)
             {
                 // Self-hosted deployment: operator pinned a (often self-signed) cert via the admin UI, so pin exactly that.
-                networkSecureClient.setCACert(deviceConfig.servicePublicKey.c_str());
+                networkSecureClient.setCACert(deviceConfig.servicePublicKey);
             }
             else
             {
@@ -271,7 +271,7 @@ ServiceData AgrumyClient::requestPostSync(const JsonDocument& jsonBuffer, Servic
     else
     {
         serviceData.eventlog.errorCode = 1000;
-        serviceData.eventlog.errorData = "Wifi not available";
+        copyStr(serviceData.eventlog.errorData, "Wifi not available");
         // Guard against recursing into pushEvent() -> requestPost() -> "still no WiFi" -> pushEvent() forever. ::service is ServiceController's own global instance, not this method's local `service` parameter (a ServiceRequest) - pushEvent lives on the application layer, not here.
         if (service.endpoint != serviceEndpoint.apiEvent)
         {
@@ -323,9 +323,9 @@ ServiceData AgrumyClient::requestGetSync(ServiceRequest service)
 
         if (service.isHttps)
         {
-            if (deviceConfig.servicePublicKey.length() > 0)
+            if (deviceConfig.servicePublicKey[0] != 0)
             {
-                networkSecureClient.setCACert(deviceConfig.servicePublicKey.c_str());
+                networkSecureClient.setCACert(deviceConfig.servicePublicKey);
             }
             else
             {
@@ -374,7 +374,7 @@ ServiceData AgrumyClient::requestGetSync(ServiceRequest service)
     else
     {
         serviceData.eventlog.errorCode = 1000;
-        serviceData.eventlog.errorData = "Wifi not available";
+        copyStr(serviceData.eventlog.errorData, "Wifi not available");
     }
     return serviceData;
 }
@@ -472,7 +472,7 @@ bool AgrumyClient::mqttConnectPersistent(int tenantID, int deviceID)
 // Bare "true"/"false" JSON body, no session/apiKey required server-side - the query-string apiId is the only thing that endpoint trusts.
 bool AgrumyClient::isHardResetPending(ServiceRequest serviceRequest, const String &apiId)
 {
-    serviceRequest.endpoint = serviceEndpoint.apiHardResetPending + "?apiId=" + apiId;
+    serviceRequest.endpoint = String(serviceEndpoint.apiHardResetPending) + "?apiId=" + apiId;
     ServiceData serviceData = requestGet(serviceRequest);
     return !serviceData.eventlog.error && serviceData.payload.indexOf("true") >= 0;
 }

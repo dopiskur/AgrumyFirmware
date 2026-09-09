@@ -144,12 +144,12 @@ void ServiceController::processPendingCommand(DeviceConfig& config, ServiceReque
         if (device.firmwareUpdate(fwUrl, otaHttps, fwSha256))
         {
             Serial.println("[Service] Command " + String(commandId) + " (ForceOTA) succeeded, rebooting into new image");
-            pushEvent(serviceRequest, "CommandExecuted", "version=" + config.firmwareVersion, commandId);
+            pushEvent(serviceRequest, "CommandExecuted", String("version=") + config.firmwareVersion, commandId);
             device.reboot(); // never returns
         }
 
         Serial.println("[Service] Command " + String(commandId) + " (ForceOTA) failed - staying on current firmware");
-        pushEvent(serviceRequest, "CommandExecuted", "download/flash failed, version=" + config.firmwareVersion, commandId);
+        pushEvent(serviceRequest, "CommandExecuted", String("download/flash failed, version=") + config.firmwareVersion, commandId);
         break;
     }
 
@@ -532,10 +532,10 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
         // Reboot only when a field tied to boot-time state changed (transport/TLS setup, identity, sleep mode); everything else is read from deviceConfig every cycle and applies without a reboot.
         bool rebootRequired =
             configCandidate->deviceTypeServiceID != deviceConfig.deviceTypeServiceID ||
-            configCandidate->servicePoint        != deviceConfig.servicePoint ||
-            configCandidate->servicePublicKey    != deviceConfig.servicePublicKey ||
-            configCandidate->apiId               != deviceConfig.apiId ||
-            configCandidate->apiKey              != deviceConfig.apiKey ||
+            strcmp(configCandidate->servicePoint, deviceConfig.servicePoint) != 0 ||
+            strcmp(configCandidate->servicePublicKey, deviceConfig.servicePublicKey) != 0 ||
+            strcmp(configCandidate->apiId, deviceConfig.apiId) != 0 ||
+            strcmp(configCandidate->apiKey, deviceConfig.apiKey) != 0 ||
             configCandidate->sleepDeep           != deviceConfig.sleepDeep;
 
         if (rebootRequired) {

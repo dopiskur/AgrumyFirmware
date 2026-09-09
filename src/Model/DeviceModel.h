@@ -2,9 +2,10 @@
 #define DATASTRUCTURE_H
 #include "Arduino.h"
 #include "ServiceTypeIds.h"
+#include "FixedString.h"
 
 struct DeviceDefaults {
-    String servicePoint = "api.agrumy.com";
+    const char* servicePoint = "api.agrumy.com";
     int serviceType = ServiceTypeIds::Https;
 };
 
@@ -32,7 +33,7 @@ struct EventLog
 {
     bool error = false;
     int errorCode = 0;
-    String errorData ="";
+    char errorData[128] = "";
 };
 
 // Coarse "where in the loop was the device when it died" marker - RTC_DATA_ATTR-backed (see DeviceController.cpp), survives the panic-reboot a WDT timeout triggers, read back by consumeCrashSummary() to tell a genuine crash from a WDT stall and say roughly where the stall happened.
@@ -63,9 +64,9 @@ struct PendingCommand
     bool present = false;
     int idDeviceCommand = 0;
     int actionType = 0;
-    String expiresAt = "";
+    char expiresAt[32] = ""; // ISO 8601 UTC
     // ProvisionDevice/UpdateWifiCredentials set this - JSON, api.Models.DiscoveryProvisionPayload/WifiUpdatePayload on the server side.
-    String payload = "";
+    char payload[512] = "";
 };
 
 struct ConfigPin // default values, cannot be changed during the setup phase
@@ -180,15 +181,6 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     bool RELAY_ACTIVE_LOW=false;
 };
 
-struct SensorType
-{
-    String battery;
-    String temperature; // DHT, BMP180, BME280,
-    String humidity;    // DHT, BME280,
-    String barometer;  // BMP180, BME280
-    String waterTank;   // AJSR04M, waterLevel
-    
-};
 
 
 struct ConfigSensor
@@ -321,10 +313,6 @@ struct ConfigController
 
 struct DeviceConfig
 {
-    String WifiPassword;
-    String userLogin; // Device registration
-    String devicePin; // Device registration
-
     int configVersion;
 
     PendingCommand pendingCommand;
@@ -335,10 +323,10 @@ struct DeviceConfig
     int deviceFarmUnitZoneID;
     int deviceTypeServiceID;
 
-    String apiId;
-    String apiKey;
-    String servicePoint;
-    String servicePublicKey;
+    char apiId[64] = "";
+    char apiKey[64] = "";
+    char servicePoint[128] = "";
+    char servicePublicKey[2048] = ""; // PEM CA certificate for a self-hosted server, "" means the built-in bundle
 
     int sleepSeconds;
     bool sleepDeep;
@@ -360,10 +348,10 @@ struct DeviceConfig
     bool emergencyStop; // tenant-wide fail-closed switch (roadmap #230) - forces every relay off ahead of any rule, independent of configController.relayEnabled
 
     bool firmwareUpdate; // 0 no update, 1 update available
-    String firmwareVersion; // newest published version for this device type, "" if none
-    String firmwareUrl;     // .bin download URL, paired with firmwareVersion
+    char firmwareVersion[32] = ""; // newest published version for this device type, "" if none
+    char firmwareUrl[256] = "";    // .bin download URL, paired with firmwareVersion
     // Expected SHA-256 (lowercase hex) of the .bin at firmwareUrl; "" means OtaController skips verification instead of failing closed.
-    String firmwareSha256;
+    char firmwareSha256[65] = "";
 
     ConfigSensor configSensor;
     ConfigController configController;
@@ -375,7 +363,7 @@ struct DeviceConfig
     int rulesRejectedCount = 0;
 };
 
-// Measured 24128 bytes on real esp32dev hardware - this struct must never be passed/returned by value or declared as a stack local (that's what overflowed loopTask before ServiceController::apiConfig's heap-allocated configCandidate). Ceiling is rounded up from the measured size so a future field addition that blows the budget fails the build instead of a device.
+// Roughly 27KB on esp32dev (every string a fixed char array, no heap) - this struct must never be passed/returned by value or declared as a stack local (that's what overflowed loopTask before ServiceController::apiConfig's heap-allocated configCandidate). Ceiling is rounded up so a future field addition that blows the budget fails the build instead of a device.
 static_assert(sizeof(DeviceConfig) <= 32768, "DeviceConfig grew past the 32KB ceiling - check for a stack-unsafe growth before raising this");
 
 
@@ -441,18 +429,18 @@ struct ServiceRequest
 
 struct ServiceEndpoint
 {
-    String apiRegister = "/api/Device/Register";
-    String apiConfig = "/api/Device/Config";
-    String apiAuthenticate = "/api/Device/Authenticate";
-    String apiEvent = "/api/Device/Event";
-    String apiCommandAck = "/api/Device/Command/Ack";
-    String apiHardResetPending = "/api/Device/HardResetPending";
-    String apiDiscoveryReport = "/api/Discovery/Report";
+    const char* apiRegister = "/api/Device/Register";
+    const char* apiConfig = "/api/Device/Config";
+    const char* apiAuthenticate = "/api/Device/Authenticate";
+    const char* apiEvent = "/api/Device/Event";
+    const char* apiCommandAck = "/api/Device/Command/Ack";
+    const char* apiHardResetPending = "/api/Device/HardResetPending";
+    const char* apiDiscoveryReport = "/api/Discovery/Report";
 
-    String apiSensorDataPost="/api/SensorData";
-    String apiSensorDataGet="";
+    const char* apiSensorDataPost = "/api/SensorData";
+    const char* apiSensorDataGet = "";
 
-    String apiControllerDataPost = "/api/ControllerData";
+    const char* apiControllerDataPost = "/api/ControllerData";
 
 };
 
