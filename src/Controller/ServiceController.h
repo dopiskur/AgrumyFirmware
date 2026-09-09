@@ -7,25 +7,23 @@
 
 #include "../Model/DeviceModel.h"
 #include "ActuatorController.h"
+#include "AgrumyClient.h"
 
 // Forward declarations
 class DeviceController;
 class SensorController;
 
-// OtaController::update()'s parameters, bundled so a firmware update rides the same network task queue as requestPost/requestGet.
-struct OtaParams
-{
-    String url;
-    bool isHttps = false;
-    String servicePublicKey;
-    String servicePoint;
-    String expectedSha256;
-};
-
+// Roadmap #457 (EPIC A3) - ServiceController is now the application layer (ConfigApplier/
+// CommandExecutor: apiConfig, processPendingCommand, pushEvent and friends); every actual network
+// round trip is forwarded to AgrumyClient (see AgrumyClient.h), the transport/session layer split out
+// of this class. The forwarding methods below (requestPost/requestGet/firmwareUpdate/mqttPublish/
+// mqttConnectPersistent/apiAuthenticate/maskSecret/beginNetworkTask/networkTaskHandle) exist so every
+// existing external caller (DeviceController, MqttController, ConfigParser, main.cpp) keeps calling
+// `service.xxx(...)` unchanged.
 class ServiceController
 {
 public:
-    // Creates the one persistent network task; call exactly once from setup(), before anything can call requestPost/requestGet/firmwareUpdate.
+    // Forwards to AgrumyClient::beginNetworkTask - call exactly once from setup(), before anything can call requestPost/requestGet/firmwareUpdate.
     static void beginNetworkTask();
     static TaskHandle_t networkTaskHandle();
 
@@ -33,15 +31,16 @@ public:
     ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
 
-    // OtaController::update on the network task; true only once the image is downloaded and verified (caller reboots).
+    // Forwards to AgrumyClient::firmwareUpdate; true only once the image is downloaded and verified (caller reboots).
     bool firmwareUpdate(const OtaParams& params);
 
-    // MqttController::publishSync/connectPersistentSync on the network task - same "TLS handshake never on loopTask" discipline as requestPost, so an MQTT TLS session and an HTTPS one never run concurrently and fight over heap.
+    // Forwards to AgrumyClient::mqttPublish/mqttConnectPersistent.
     bool mqttPublish(const String& topic, const String& payload);
     bool mqttConnectPersistent(int tenantID, int deviceID);
 
     void errorReport(EventLog eventlog);
 
+    // Forwards to AgrumyClient::apiAuthenticate.
     void apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
     // deviceConfig is a reference so a received config can be hot-applied in place; returns true when that happened (no reboot), and the caller must then re-copy deviceConfig into its per-module value copies.
     bool apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
@@ -74,14 +73,6 @@ public:
 
     // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. Roadmap #133's local display "last sync" page reads this; not set on a 429/error response.
     time_t lastConfigSyncEpoch = 0;
-
-    // Actual HTTP(S) logic, run ONLY on the persistent network task - see ServiceController.cpp's networkTaskLoop. Public only so that free function can call it; not part of the intended external API.
-    ServiceData requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service);
-    ServiceData requestGetSync(ServiceRequest service);
-
-private:
-    // Queried on a 401 instead of ever self-wiping from a bare failure count - apiId alone (no apiKey/session) so this reaches a device whose apiKey itself is what's broken.
-    bool isHardResetPending(ServiceRequest serviceRequest, const String &apiId);
 };
 
 // The one ServiceController instance, defined in main.cpp.

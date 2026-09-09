@@ -39,7 +39,7 @@ public:
 
     // Actual MQTT TLS connect+publish/connect+subscribe work, run ONLY on the persistent network
     // task (ServiceController.cpp's networkTaskLoop) - same "TLS handshake never on loopTask"
-    // discipline as ServiceController::requestPostSync. Public only so that free function can call
+    // discipline as AgrumyClient::requestPostSync. Public only so that free function can call
     // them; not part of the intended external API. See ServiceController::mqttPublish/
     // mqttConnectPersistent for the loopTask-side facades that actually enqueue this work.
     bool publishSync(const String& topic, const String& payload);
