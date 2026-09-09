@@ -7,7 +7,6 @@
 #include "ConfigParser.h"
 #include "StorageController.h"
 #include "PowerController.h"
-#include "OtaController.h"
 
 #include <NTPClient.h>
 #include <WiFiUdp.h>
@@ -591,7 +590,13 @@ void DeviceController::reboot()
 
 bool DeviceController::firmwareUpdate(String url, bool isHttps, String expectedSha256)
 {
-  return OtaController::update(url, isHttps, deviceConfig.servicePublicKey, deviceConfig.servicePoint, expectedSha256);
+  OtaParams params;
+  params.url = url;
+  params.isHttps = isHttps;
+  params.servicePublicKey = deviceConfig.servicePublicKey;
+  params.servicePoint = deviceConfig.servicePoint;
+  params.expectedSha256 = expectedSha256;
+  return service.firmwareUpdate(params);
 }
 
 void DeviceController::reset()

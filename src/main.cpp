@@ -171,6 +171,9 @@ void setup()
   Serial.println("[Initialization started]");
   Serial.printf("[Diag] sizeof(DeviceConfig)=%u sizeof(Rule)=%u sizeof(ConditionNode)=%u\n", sizeof(DeviceConfig), sizeof(Rule), sizeof(ConditionNode));
 
+  // Before anything below can call requestPost/requestGet/firmwareUpdate (as early as the reboot-outcome pushEvent()/apiAuthenticate() further down) - the task itself just blocks on an empty queue until then.
+  ServiceController::beginNetworkTask();
+
   // Read (and clear) any core dump before anything else touches flash/WiFi - it has no dependency on either, and the summary is needed by the reboot-outcome reporting block further down.
   String crashSummary = device.consumeCrashSummary();
 
@@ -279,8 +282,9 @@ void setup()
 
   // Arm the watchdog only now that setup (incl. the blocking WiFi portal/registration path) is done - those legitimately take longer than one loop cycle. esp_task_wdt_init() is a no-op if the WDT (arduino-esp32's own 5s default) is already initialized, so tear it down first.
   esp_task_wdt_deinit();
-  esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true); // true: panic-handler reboot on timeout
-  esp_task_wdt_add(NULL);                       // watch the Arduino loop task
+  esp_task_wdt_init(WDT_TIMEOUT_SECONDS, true);        // true: panic-handler reboot on timeout
+  esp_task_wdt_add(NULL);                              // watch the Arduino loop task
+  esp_task_wdt_add(ServiceController::networkTaskHandle()); // and the persistent network task - it feeds this itself (ServiceController.cpp's networkTaskLoop / OtaController's per-chunk reset)
 
   Serial.printf("[Diag] post-boot FreeHeap=%u MaxAllocHeap=%u loopTaskHighWaterMark=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(NULL));
   Serial.println("[Initialization] Finished: ");

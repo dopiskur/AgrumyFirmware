@@ -3,6 +3,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Update.h>
+#include <esp_task_wdt.h>
 #include "mbedtls/sha256.h" // hardware-accelerated on ESP32
 
 #include "OtaController.h"
@@ -118,6 +119,7 @@ bool OtaController::update(String url, bool isHttps, const String &servicePublic
   size_t remaining = (size_t)contentLength;
   while (remaining > 0 && http.connected())
   {
+    esp_task_wdt_reset(); // runs on ServiceController's network task now - a whole image can take far longer than one WDT period, so this must be fed per chunk, not just once per request like everything else on that task
     size_t chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
     size_t got = stream->readBytes(buf, chunk);
     if (got == 0)

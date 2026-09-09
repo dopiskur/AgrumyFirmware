@@ -2,6 +2,8 @@
 #define ServiceController_H
 #include "Arduino.h"
 #include <ArduinoJson.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "../Model/DeviceModel.h"
 #include "ActuatorController.h"
@@ -10,12 +12,34 @@
 class DeviceController;
 class SensorController;
 
+// Bundles OtaController::update()'s own parameters so a firmware-update request can travel through the
+// same persistent network task queue as requestPost/requestGet - see ServiceController::firmwareUpdate.
+struct OtaParams
+{
+    String url;
+    bool isHttps = false;
+    String servicePublicKey;
+    String servicePoint;
+    String expectedSha256;
+};
+
 class ServiceController
 {
 public:
+    // Creates the persistent network task (one static-stack task owning the single WiFiClientSecure/
+    // HTTPClient, replacing the old per-request xTaskCreate pattern - see ServiceController.cpp's
+    // NETWORK_TASK_STACK_SIZE comment). Call exactly once, from main.cpp's setup(), before anything can
+    // call requestPost/requestGet/firmwareUpdate.
+    static void beginNetworkTask();
+    static TaskHandle_t networkTaskHandle();
+
     void checkConfig(String payload); // For Debug only
     ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
+
+    // Runs OtaController::update on the persistent network task, same TLS-stack-reuse rationale as
+    // requestPost/requestGet. True only once the image is fully downloaded+verified (caller reboots).
+    bool firmwareUpdate(const OtaParams& params);
 
     void errorReport(EventLog eventlog);
 
@@ -52,7 +76,7 @@ public:
     // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. Roadmap #133's local display "last sync" page reads this; not set on a 429/error response.
     time_t lastConfigSyncEpoch = 0;
 
-    // Actual HTTP(S) logic, run on a dedicated task by requestPost()/requestGet() - see ServiceController.cpp's networkTaskEntry. Public only so that free function can call it; not part of the intended external API.
+    // Actual HTTP(S) logic, run ONLY on the persistent network task - see ServiceController.cpp's networkTaskLoop. Public only so that free function can call it; not part of the intended external API.
     ServiceData requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service);
     ServiceData requestGetSync(ServiceRequest service);
 

@@ -46,10 +46,16 @@ CONTRACT = {
         "mode": "sends_exact_array_item",
         "src": "SensorController.cpp :: buildSensorDataPayload()  ->  jsonSensorData[...]",
         "keys": [
-            "deviceID", "tenantID", "deviceUnitID", "deviceUnitZoneID",
+            "deviceID", "tenantID", "deviceFarmUnitID", "deviceFarmUnitZoneID",
             "temperature", "soilTemperature", "humidity", "battery", "moisture", "light",
             "co2", "tvoc", "barometer", "liquidPH", "rainLevel", "waterLevel", "wind", "dateCreated",
         ],
+    },
+
+    "controllerdata.request.schema.json": {
+        "mode": "sends_exact_array_item",
+        "src": "ServiceController.cpp :: pushControllerData()  ->  entry[...] (percent only for a positional function, so not in required)",
+        "keys": ["relayFunction", "isOn", "dateCreated"],
     },
 
     "authenticate.response.schema.json": {
@@ -63,12 +69,12 @@ CONTRACT = {
         "src": "DeviceController.cpp :: loadConfig()  ->  config[...]  (firmware ignores idDeviceConfig* fields)",
         "keys": [
             "servicePoint", "servicePublicKey", "apiId", "apiKey",
-            "configVersion", "tenantID", "deviceID", "deviceUnitID", "deviceUnitZoneID",
+            "configVersion", "tenantID", "deviceID", "deviceFarmUnitID", "deviceFarmUnitZoneID",
             "deviceTypeServiceID", "sleepSeconds", "sleepDeep", "utcOffsetSeconds",  # roadmap #39
             "deviceSensorEnabled", "deviceControllerEnabled", "batteryEnabled", "enabled",
             "debug", "reboot", "reset",
             "firmwareUpdate", "firmwareVersion", "firmwareUrl", "firmwareSha256",  # roadmap #3 (OTA) / #131
-            "commandVersion", "pendingCommand",  # roadmap #34
+            "pendingCommand",  # roadmap #34
             "deviceConfigSensor", "deviceConfigController",
         ],
         "nested": {

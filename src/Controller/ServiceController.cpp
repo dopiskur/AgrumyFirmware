@@ -2,6 +2,7 @@
 #include "WiFi.h"
 #include "HTTPClient.h"
 #include <esp_timer.h>
+#include <esp_task_wdt.h>
 #include <WiFiClientSecure.h>
 #include "NTPClient.h"
 #include "ServiceController.h"
@@ -9,35 +10,107 @@
 #include "SensorController.h"
 #include "StorageController.h"
 #include "ConfigParser.h"
+#include "OtaController.h"
 #include "../Logic/DiscoveryLogic.h"
 #include "../Logic/HttpDateLogic.h"
+#include "../Logic/NetworkRequestLogic.h"
 
 #include <ArduinoJson.h>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 
-// TLS handshakes need far more stack than loopTask's own budget (see main.cpp's SET_LOOP_TASK_STACK_SIZE comment) - running them on a short-lived dedicated task instead of loopTask itself means that stack is only ever carved out of the heap for the duration of one request, not permanently, leaving mbedTLS's own allocations a much bigger contiguous free block to work with.
-static const uint32_t NETWORK_TASK_STACK_SIZE = 49152;
+// One persistent task, created once in setup() (ServiceController::beginNetworkTask) and never deleted, runs
+// every HTTP(S) call and OTA download - replaces xTaskCreate-ing a fresh task per request, whose stack the idle
+// task had not always reclaimed before the next request created another. Sized from measured watermarks
+// (esp32dev, real api.agrumy.com TLS POSTs and a GitHub OTA download): peak use ~6KB, so this leaves ~2.5x
+// headroom; every KB here is a KB mbedTLS cannot use for its ~45KB handshake working set. Heap-backed, not
+// xTaskCreateStatic/.bss: esp32dev's fixed dram0_0_seg (~122KB, shared with every global) has no room for it.
+static const uint32_t NETWORK_TASK_STACK_SIZE = 16384;
+static TaskHandle_t networkTask = nullptr;
 
-struct NetworkTaskArgs
+static const UBaseType_t NETWORK_QUEUE_LENGTH = 4;
+static QueueHandle_t networkQueue = nullptr;
+
+// Facade wait timeout = HTTPClient's own unmodified connect+read timeouts (HTTPCLIENT_DEFAULT_TCP_TIMEOUT,
+// 5s each) plus a 10s margin for queueing/scheduling jitter - derived from settings already in use, not a
+// fresh magic number.
+static const uint32_t NETWORK_REQUEST_TIMEOUT_MS = 2 * HTTPCLIENT_DEFAULT_TCP_TIMEOUT + 10000;
+// Short - only long enough to hand off to the task under normal load. A full queue must fail fast; a
+// caller should never wait anywhere near the full request timeout just to learn it couldn't be queued.
+static const uint32_t NETWORK_ENQUEUE_TIMEOUT_MS = 200;
+
+// Heap-allocated (see requestPost/requestGet/firmwareUpdate below): a facade timeout can leave the task
+// still working on this after the facade itself has moved on, so it must outlive whichever party finishes
+// first. released/releaseNetworkRequest() below implement the "whoever's second frees it" handshake
+// (Logic/NetworkRequestLogic.h) that makes that safe.
+struct NetworkRequest
 {
-    ServiceController *self;
-    const JsonDocument *jsonBuffer; // null for GET
+    enum Kind { Post, Get, Ota } kind;
     ServiceRequest service;
-    bool isPost;
-    ServiceData result;
-    SemaphoreHandle_t done;
+    const JsonDocument *payload = nullptr; // Post only - points into the caller's own stack frame, valid for as long as requestPost() itself blocks waiting on done
+    OtaParams ota; // Ota only
+    ServiceData result; // Post/Get only
+    bool ok = false; // Ota only - OtaController::update()'s own bool result
+    SemaphoreHandle_t done = nullptr;
+    std::atomic<int> released{0};
 };
 
-static void networkTaskEntry(void *pvParameters)
+static void releaseNetworkRequest(NetworkRequest *req)
 {
-    NetworkTaskArgs *args = static_cast<NetworkTaskArgs *>(pvParameters);
-    args->result = args->isPost
-        ? args->self->requestPostSync(*args->jsonBuffer, args->service)
-        : args->self->requestGetSync(args->service);
-    xSemaphoreGive(args->done);
-    vTaskDelete(NULL);
+    if (networkRequestReleaseShouldFree(req->released))
+    {
+        vSemaphoreDelete(req->done);
+        delete req;
+    }
+}
+
+// Single WiFiClientSecure the network task owns for its whole lifetime, shared by requestPostSync and
+// requestGetSync - nothing outside this task ever touches it. Reused (not re-constructed) across requests
+// on purpose, same "one instance, not one per request" reasoning as the task itself.
+static WiFiClientSecure networkSecureClient;
+
+static void networkTaskLoop(void *)
+{
+    for (;;)
+    {
+        NetworkRequest *req = nullptr;
+        if (xQueueReceive(networkQueue, &req, portMAX_DELAY) != pdTRUE || req == nullptr)
+        {
+            continue;
+        }
+
+        esp_task_wdt_reset(); // covers every Post/Get, including one buffered-replay file per iteration
+
+        switch (req->kind)
+        {
+        case NetworkRequest::Post:
+            req->result = service.requestPostSync(*req->payload, req->service);
+            break;
+        case NetworkRequest::Get:
+            req->result = service.requestGetSync(req->service);
+            break;
+        case NetworkRequest::Ota:
+            req->ok = OtaController::update(req->ota.url, req->ota.isHttps, req->ota.servicePublicKey, req->ota.servicePoint, req->ota.expectedSha256);
+            break;
+        }
+
+        xSemaphoreGive(req->done);
+        releaseNetworkRequest(req); // never touch req below this line - the facade may already be freeing it concurrently
+    }
+}
+
+void ServiceController::beginNetworkTask()
+{
+    networkQueue = xQueueCreate(NETWORK_QUEUE_LENGTH, sizeof(NetworkRequest *));
+    xTaskCreate(networkTaskLoop, "network", NETWORK_TASK_STACK_SIZE, nullptr, 1, &networkTask);
+}
+
+TaskHandle_t ServiceController::networkTaskHandle()
+{
+    return networkTask;
 }
 
 // Root CA bundle embedded via platformio.ini board_build.embed_files.
@@ -72,18 +145,53 @@ String ServiceController::maskSecret(const String &value)
     return value.substring(0, 4) + "****...****" + value.substring(value.length() - 4);
 }
 
+static ServiceData buildQueueFullError()
+{
+    ServiceData result;
+    result.eventlog.error = true;
+    result.eventlog.errorCode = 1001;
+    result.eventlog.errorData = "Network task queue full";
+    return result;
+}
+
+static ServiceData buildTimeoutError()
+{
+    ServiceData result;
+    result.eventlog.error = true;
+    result.eventlog.errorCode = 1002;
+    result.eventlog.errorData = "Network task did not respond in time";
+    return result;
+}
+
 ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, ServiceRequest service)
 {
-    NetworkTaskArgs args;
-    args.self = this;
-    args.jsonBuffer = &jsonBuffer;
-    args.service = service;
-    args.isPost = true;
-    args.done = xSemaphoreCreateBinary();
-    xTaskCreate(networkTaskEntry, "netPost", NETWORK_TASK_STACK_SIZE, &args, 1, NULL);
-    xSemaphoreTake(args.done, portMAX_DELAY);
-    vSemaphoreDelete(args.done);
-    return args.result;
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::Post;
+    req->service = service;
+    req->payload = &jsonBuffer;
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[Service] requestPost: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return buildQueueFullError();
+    }
+
+    if (xSemaphoreTake(req->done, pdMS_TO_TICKS(NETWORK_REQUEST_TIMEOUT_MS)) != pdTRUE)
+    {
+        Serial.println("[Service] requestPost: network task did not respond in time");
+        releaseNetworkRequest(req);
+        return buildTimeoutError();
+    }
+
+    ServiceData result = req->result;
+    releaseNetworkRequest(req);
+    return result;
 }
 
 ServiceData ServiceController::requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service)
@@ -105,19 +213,18 @@ ServiceData ServiceController::requestPostSync(const JsonDocument& jsonBuffer, S
         if (service.isHttps)
         {
             Serial.printf("[Diag] pre-TLS FreeHeap=%u MaxAllocHeap=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
-            static WiFiClientSecure secureClient;
             if (deviceConfig.servicePublicKey.length() > 0)
             {
                 // Self-hosted deployment: operator pinned a (often self-signed) cert via the admin UI, so pin exactly that.
-                secureClient.setCACert(deviceConfig.servicePublicKey.c_str());
+                networkSecureClient.setCACert(deviceConfig.servicePublicKey.c_str());
             }
             else
             {
-                // Publicly-trusted cert: validate against the embedded CA bundle (CA rotation doesn't force a re-flash) - secureClient is static, so clear any prior call's CA cert first (setCACertBundle() doesn't).
-                secureClient.setCACert(nullptr);
-                secureClient.setCACertBundle(rootca_crt_bundle_start);
+                // Publicly-trusted cert: validate against the embedded CA bundle (CA rotation doesn't force a re-flash) - networkSecureClient persists across calls, so clear any prior call's CA cert first (setCACertBundle() doesn't).
+                networkSecureClient.setCACert(nullptr);
+                networkSecureClient.setCACertBundle(rootca_crt_bundle_start);
             }
-            http.begin(secureClient, serviceURL);
+            http.begin(networkSecureClient, serviceURL);
         }
         else
         {
@@ -171,6 +278,11 @@ ServiceData ServiceController::requestPostSync(const JsonDocument& jsonBuffer, S
         }
 
         http.end();
+        // No keep-alive left the connection already dead - stop() releases networkSecureClient's mbedTLS context instead of leaving it half-torn-down until the next call reuses it.
+        if (service.isHttps && !networkSecureClient.connected())
+        {
+            networkSecureClient.stop();
+        }
     }
     else
     {
@@ -187,16 +299,32 @@ ServiceData ServiceController::requestPostSync(const JsonDocument& jsonBuffer, S
 
 ServiceData ServiceController::requestGet(ServiceRequest service)
 {
-    NetworkTaskArgs args;
-    args.self = this;
-    args.jsonBuffer = nullptr;
-    args.service = service;
-    args.isPost = false;
-    args.done = xSemaphoreCreateBinary();
-    xTaskCreate(networkTaskEntry, "netGet", NETWORK_TASK_STACK_SIZE, &args, 1, NULL);
-    xSemaphoreTake(args.done, portMAX_DELAY);
-    vSemaphoreDelete(args.done);
-    return args.result;
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::Get;
+    req->service = service;
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[Service] requestGet: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return buildQueueFullError();
+    }
+
+    if (xSemaphoreTake(req->done, pdMS_TO_TICKS(NETWORK_REQUEST_TIMEOUT_MS)) != pdTRUE)
+    {
+        Serial.println("[Service] requestGet: network task did not respond in time");
+        releaseNetworkRequest(req);
+        return buildTimeoutError();
+    }
+
+    ServiceData result = req->result;
+    releaseNetworkRequest(req);
+    return result;
 }
 
 ServiceData ServiceController::requestGetSync(ServiceRequest service)
@@ -211,17 +339,16 @@ ServiceData ServiceController::requestGetSync(ServiceRequest service)
 
         if (service.isHttps)
         {
-            static WiFiClientSecure secureClient;
             if (deviceConfig.servicePublicKey.length() > 0)
             {
-                secureClient.setCACert(deviceConfig.servicePublicKey.c_str());
+                networkSecureClient.setCACert(deviceConfig.servicePublicKey.c_str());
             }
             else
             {
-                secureClient.setCACert(nullptr);
-                secureClient.setCACertBundle(rootca_crt_bundle_start);
+                networkSecureClient.setCACert(nullptr);
+                networkSecureClient.setCACertBundle(rootca_crt_bundle_start);
             }
-            http.begin(secureClient, serviceURL);
+            http.begin(networkSecureClient, serviceURL);
         }
         else
         {
@@ -255,6 +382,10 @@ ServiceData ServiceController::requestGetSync(ServiceRequest service)
             serviceData.eventlog.errorCode = httpCode;
         }
         http.end();
+        if (service.isHttps && !networkSecureClient.connected())
+        {
+            networkSecureClient.stop();
+        }
     }
     else
     {
@@ -262,6 +393,36 @@ ServiceData ServiceController::requestGetSync(ServiceRequest service)
         serviceData.eventlog.errorData = "Wifi not available";
     }
     return serviceData;
+}
+
+bool ServiceController::firmwareUpdate(const OtaParams& params)
+{
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::Ota;
+    req->ota = params;
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[Service] firmwareUpdate: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return false;
+    }
+
+    // Bounded polling, not a bare portMAX_DELAY wait - firmwareUpdate() is always called from loopTask,
+    // which is itself watchdog-watched, and a multi-minute download must not starve loopTask's own
+    // watchdog while it waits on a task that IS still making progress.
+    while (xSemaphoreTake(req->done, pdMS_TO_TICKS(5000)) != pdTRUE)
+    {
+        esp_task_wdt_reset();
+    }
+    bool ok = req->ok;
+    releaseNetworkRequest(req);
+    return ok;
 }
 
 // Fire-and-forget: never checks the result or retries, so a failed push doesn't chase itself with another event about its own failure.
@@ -518,6 +679,8 @@ static void addHeapDiagnostics(JsonDocument &payload)
     payload["MinFreeHeap"] = ESP.getMinFreeHeap();
     payload["MaxAllocHeap"] = ESP.getMaxAllocHeap();
     payload["StackHighWaterMark"] = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+    // Same margin, for the persistent network task instead of the caller (loop task) - a low value here means TLS/OTA traffic is close to overflowing its own static 49152-byte stack.
+    payload["NetworkStackHighWaterMark"] = (uint32_t)uxTaskGetStackHighWaterMark(ServiceController::networkTaskHandle());
 }
 
 // A real config-poll, not just WiFi.status()==WL_CONNECTED - a wrong/isolated network can still hand out a link with no route to the server. Mirrors apiConfig()'s own single auth-retry, but never touches its reboot/config-apply side effects.
