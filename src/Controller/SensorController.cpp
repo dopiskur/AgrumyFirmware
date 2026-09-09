@@ -1304,7 +1304,15 @@ void SensorController::pushSensorData(JsonDocument payload){
     bool sent = false;
     if (flushBufferedSensorData())
     {
-        sent = !service.requestPost(payload, serviceRequest).eventlog.error; // 2xx - requestPost marks 200/201 as success
+        ServiceData result = service.requestPost(payload, serviceRequest);
+        if (result.eventlog.errorCode == 401)
+        {
+            // One re-auth retry, same as flushBufferedSensorData()'s own 401 handling above.
+            Serial.println("[Sensor] SensorData send got 401 - re-authenticating once");
+            service.apiAuthenticate(deviceConfig, serviceRequest, device);
+            result = service.requestPost(payload, serviceRequest);
+        }
+        sent = !result.eventlog.error; // 2xx - requestPost marks 200/201 as success
     }
 
     if (sent)

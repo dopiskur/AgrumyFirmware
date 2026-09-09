@@ -68,7 +68,14 @@ void ServiceController::pushEvent(ServiceRequest service, String eventType, Stri
     }
 
     Serial.println("[Service] pushEvent: " + eventType + (message.length() > 0 ? " (" + message + ")" : ""));
-    requestPost(payload, service);
+    ServiceData result = requestPost(payload, service);
+    if (result.eventlog.errorCode == 401)
+    {
+        // One re-auth retry, same as apiConfig()'s 401 handling - a session the server evicted (restart/redeploy wiped the in-process cache) must not silently drop the event.
+        Serial.println("[Service] pushEvent: got 401 - re-authenticating once");
+        apiAuthenticate(deviceConfig, service, device);
+        requestPost(payload, service);
+    }
 }
 
 // Fire-and-forget: same convention as pushEvent - a dropped push just means the Fleet page's relay/position display lags until the next tick that also has a change, never buffered/retried like SensorData.
@@ -96,7 +103,14 @@ void ServiceController::pushControllerData(ServiceRequest service, const Control
     }
 
     Serial.println("[Service] pushControllerData: " + String(count) + " change(s)");
-    requestPost(payload, service);
+    ServiceData result = requestPost(payload, service);
+    if (result.eventlog.errorCode == 401)
+    {
+        // One re-auth retry, same as pushEvent()'s 401 handling.
+        Serial.println("[Service] pushControllerData: got 401 - re-authenticating once");
+        apiAuthenticate(deviceConfig, service, device);
+        requestPost(payload, service);
+    }
 }
 
 // Ack happens BEFORE execute: a Reboot has no "after" on this same connection to report from.
