@@ -278,7 +278,8 @@ void SensorController::setupSensor()
     {
         as7341Status = as7341.begin();
     }
-    if (deviceConfig.configSensor.sensorWeight == SensorTypeIds::Hx711)
+    // Pin -1 (undefined on this board) reads LOW, so is_ready() passes and read()'s digitalWrite(-1) inside its critical section aborts the whole device via gpio_set_level's error log.
+    if (deviceConfig.configSensor.sensorWeight == SensorTypeIds::Hx711 && deviceConfig.configPin.HX711_DOUT >= 0 && deviceConfig.configPin.HX711_SCK >= 0)
     {
         hx711Scale.begin(deviceConfig.configPin.HX711_DOUT, deviceConfig.configPin.HX711_SCK);
         hx711Status = hx711Scale.wait_ready_timeout(1000);
