@@ -10,8 +10,11 @@
 #include "ActuatorController.h"
 #include "../Logic/EpochPlausibility.h"
 
-// Heating holds its last state across a NaN reading (staying off risks freezing while the sensor is briefly down) but not forever - past this many seconds of continuous staleness the risk flips (a genuinely dead sensor with the heater stuck on is its own hazard), so it forces off instead.
+// Heating holds its last state across a NaN reading (staying off risks freezing while the sensor is briefly down) but not forever - past this many seconds of continuous staleness the risk flips (a genuinely dead sensor with the heater stuck on is its own hazard), so it forces off instead. Only the Hold policy (HEATING_FAIL_SAFE_HOLD) uses this ceiling at all - see deviceConfig.configController.heatingFailSafePolicy's own remarks.
 static const int MAX_HEATING_SENSOR_STALE_SECONDS = 30 * 60;
+
+// Must match api.Shared.Models.HeatingFailSafePolicyType exactly.
+enum HeatingFailSafePolicy { HEATING_FAIL_SAFE_HOLD = 0, HEATING_FAIL_SAFE_OFF = 1, HEATING_FAIL_SAFE_SCHEDULE_ONLY = 2 };
 
 SemaphoreHandle_t deviceStateMutex = nullptr;
 
@@ -179,17 +182,27 @@ MetricReadings ActuatorController::collectMetricReadings(const SensorData &senso
     return readings;
 }
 
-// Roadmap #396(4). Heating's bounded hold-through-NaN-temperature safety net is applied HERE, once per
-// rule, before handing off to RelayLogic::evaluateNode's pure recursive tree-walk - staying off risks
-// freezing while the sensor is briefly down, so a Heating-targeting rule holds its last state (not
-// fail-off, unlike every other function) up to MAX_HEATING_SENSOR_STALE_SECONDS, then forces off. Every
-// other NaN-metric case (any function, any node) is handled generically inside evaluateNode itself
-// (fails that one comparison, same as before #396).
+// Heating's own NaN-temperature fail-safe policy is applied HERE, once per rule, before handing off to
+// RelayLogic::evaluateNode's pure recursive tree-walk - per-zone configurable (deviceConfig.
+// configController.heatingFailSafePolicy) between Hold (last state, then force off past a grace
+// window), Off (force off immediately), and ScheduleOnly (skip this branch, fall through to the
+// generic per-node NaN handling every other function already gets). Every non-Heating NaN-metric case
+// is always handled generically inside evaluateNode itself (fails that one comparison).
 bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, time_t epochSeconds,
                                        int localWeekday, int localSecondsOfDay, bool isCurrentlyOn) const
 {
-    if ((RelayFunctionType)rule.targetFunction == RelayFunctionType::Heating && isnan(sensorData.temperature))
+    // ScheduleOnly deliberately skips this whole special-cased branch - it falls straight through to
+    // the generic evaluateNode() below, same treatment as every other function's NaN metric (a
+    // Comparison node fails that one comparison; Schedule/Interval nodes are unaffected).
+    if ((RelayFunctionType)rule.targetFunction == RelayFunctionType::Heating && isnan(sensorData.temperature)
+        && deviceConfig.configController.heatingFailSafePolicy != HEATING_FAIL_SAFE_SCHEDULE_ONLY)
     {
+        if (deviceConfig.configController.heatingFailSafePolicy == HEATING_FAIL_SAFE_OFF)
+        {
+            reportSensorStale("Heating forced off - fail-safe policy is Off, no hold grace period");
+            return false;
+        }
+        // Hold policy (default, and the fallback for any unrecognized value): hold last state up to the ceiling, then force off.
         if (heatingSensorStaleSinceEpoch == 0)
         {
             heatingSensorStaleSinceEpoch = epochSeconds;

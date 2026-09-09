@@ -301,6 +301,9 @@ struct ConfigController
     // Server-computed rain veto for WaterPump; the device just applies this flag.
     bool skipWaterPumpForRain = false;
 
+    // What a Heating rule does once its temperature reading has been stale (NaN) for longer than MAX_HEATING_SENSOR_STALE_SECONDS - matches api.Shared.Models.HeatingFailSafePolicyType exactly (0=Hold, 1=Off, 2=ScheduleOnly); an unrecognized value also falls back to Hold (see ActuatorController::evaluateRule).
+    int heatingFailSafePolicy = 0;
+
     // Roadmap #219 - present only while the server still considers the command active, see ManualOverride's own remarks.
     ManualOverride manualOverrides[MAX_MANUAL_OVERRIDES];
     int manualOverrideCount = 0;
