@@ -11,16 +11,18 @@ in the separate [AgrumyService](https://github.com/dopiskur/AgrumyService) repos
 
 ## Supported hardware
 
-Built with PlatformIO. Eight environments (plus `native`, host-only, see Tests below):
+Built with PlatformIO. Ten environments (plus `native`, host-only, see Tests below):
 
 | Environment | Board | Role |
 | --- | --- | --- |
 | `esp32dev` | ESP32-WROOM-32 dev board | Controller (relays + sensors) |
 | `esp32s3usbotg` | ESP32-S3 | Controller |
 | `kc868-a6` | ESP32-WROOM-32 (KC868-A6 kit) | Controller - six relays behind a PCF8574 I2C expander, not physically verified. Also carries an onboard SX1278 socket wired up as an optional LoRa Gateway relay (`LoRaGatewayRelayController`, `deviceConfig.loRaGatewayEnabled`) - a dual-role toggle on top of its normal WiFi/relay/sensor job, not a separate profile |
+| `heltec-v3` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | Controller (relays + sensors) - the standard WiFi/HTTP build on Heltec LoRa hardware, not a LoRa transport profile itself |
+| `heltec-v4` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V4, no official PlatformIO board yet - reuses V3's board id) + external GPS module | Controller - same job as `heltec-v3` plus GPS-based device location (TinyGPSPlus over UART, `Controller/GpsController`), reported as `Latitude`/`Longitude` in the config-poll heartbeat; V3-inherited pin mapping not verified against real V4 hardware |
 | `esp32-s3-relay-6ch` | ESP32-S3 (Waveshare ESP32-S3-Relay-6CH kit) | Controller - six relays on direct GPIO, not physically verified |
 | `esp32-lora` | ESP32-WROOM-32 + SX1276 (TTGO LoRa32 V2.1) | Profile B - no WiFi/HTTP, a separate setup()/loop() branch entirely, pin mapping and join/uplink cycle not verified against real hardware |
-| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; pin mapping + single-board cycle confirmed on real hardware, two-radio RF exchange not yet tested |
+| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; each boot derives its own AES-128-GCM session key (HKDF from a fresh random bootNonce) instead of persisting an uplink counter to flash, so replay protection survives power loss with zero flash writes per uplink; pin mapping + single-board cycle confirmed on real hardware, two-radio RF exchange not yet tested |
 | `esp32-lora-gateway-bridge` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | The LoRa private-protocol Gateway's own mains-powered radio-frontend board - bridges RadioLib frames to/from Agrumy.Gateway over USB serial; radio init + real serial link to Agrumy.Gateway confirmed on hardware, real over-the-air traffic not yet tested |
 | `heltec-lora-gateway` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | Standalone LoRa Gateway - a minimal WiFi-only device with no relays/sensors of its own, relaying nearby LoRa-only nodes' private-protocol uplinks over its own WiFi/HTTP connection (`LoRaGatewayRelayController`), no serial-attached bridge board or separate `Agrumy.Gateway` process needed |
 
@@ -53,8 +55,12 @@ internet being unreachable doesn't stop it from doing its job.
 pio run -e esp32dev
 ```
 
-The firmware ↔ API contract is defined in `contracts/device-api/` (JSON
-Schema) and enforced in CI on both repositories.
+The firmware ↔ API contract (JSON Schema) is generated in `AgrumyService` and
+pulled into this repo's `contracts/device-api/` copy via
+`tools/contract-check/sync_schemas.py`. CI (`contract-check.yml`) checks the
+firmware's field lists against both that committed copy and a fresh pull from
+`AgrumyService` master, so an upstream contract change surfaces here before
+anyone remembers to resync.
 
 ## Tests
 
@@ -79,6 +85,21 @@ on-device builds. Every hardware environment excludes these native suites
 (`test_ignore = test_native_*`) and `native` excludes any future
 `test_embedded_*` suite the other way - no on-device tests exist yet, but the split
 is already in place for when they do.
+
+### Hardware-in-the-loop smoke test
+
+`tools/hil/hil_smoke.py` flashes one bench ESP32 with a release-style build
+and drives it end to end against the test API - boot, device-registration
+lookup, heartbeat, a telemetry reading, a command round-trip, and a
+same-version ForceOTA - catching the "compiles but doesn't boot" class no
+native test can see:
+
+```
+python tools/hil/hil_smoke.py --port COM6 --api https://api.agrumy.com --login <global admin> --password ...
+```
+
+`.github/workflows/hil-smoke.yml` runs it on a self-hosted runner after every
+release tag and on demand; see `tools/hil/README.md` for one-time runner setup.
 
 ### Version and board
 
