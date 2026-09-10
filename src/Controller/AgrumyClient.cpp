@@ -21,7 +21,7 @@
 
 AgrumyClient agrumyClient;
 
-static const uint32_t NETWORK_TASK_STACK_SIZE = 16384; // measured peak ~7.6KB (OTA) - every KB here is one mbedTLS's ~45KB handshake cannot use; heap-backed, esp32dev's dram0_0_seg cannot hold it statically
+static const uint32_t NETWORK_TASK_STACK_SIZE = 16384; // measured peak ~7.6KB (OTA), ~2.6KB (CA-bundle config polls, HWM 13804B after 8 TLS calls) - every KB here is one mbedTLS's ~45KB handshake cannot use; heap-backed, esp32dev's dram0_0_seg cannot hold it statically
 static TaskHandle_t networkTask = nullptr;
 
 static const UBaseType_t NETWORK_QUEUE_LENGTH = 4;
