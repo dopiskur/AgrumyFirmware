@@ -35,7 +35,7 @@ private:
 
     // Accumulates incoming serial bytes across loop() iterations until a full AgrumySerialFrame downlink is available.
     static const size_t SERIAL_BUFFER_CAPACITY = 512;
-    uint8_t serialBuffer[SERIAL_BUFFER_CAPACITY];
+    uint8_t serialBuffer[SERIAL_BUFFER_CAPACITY] = {0};
     size_t serialBufferLength = 0;
 };
 
