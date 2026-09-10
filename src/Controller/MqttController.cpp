@@ -234,9 +234,14 @@ void MqttController::poll()
     {
         return;
     }
-    MqttClientLock lock;
+    // Non-blocking: a portMAX_DELAY wait here would let a hanging connectPersistentSync() stall loopTask's own watchdog too, not just the network task's.
+    if (xSemaphoreTake(persistentClientMutex, 0) != pdTRUE)
+    {
+        return;
+    }
     if (persistentClient.connected())
     {
         persistentClient.loop();
     }
+    xSemaphoreGive(persistentClientMutex);
 }
