@@ -96,6 +96,10 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int HX711_DOUT=-1; //UNDEFINED
     int HX711_SCK=-1; //UNDEFINED
 
+    // External GPS module UART (Controller/GpsController), AGRUMY_GPS_ENABLED only. UNDEFINED (-1) on every kit until a real install wires one and confirms free GPIOs, same convention as the CS/DOUT/SCK pins above.
+    int GPS_RX=-1; //UNDEFINED
+    int GPS_TX=-1; //UNDEFINED
+
     int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
 
     // Roadmap #231 - all UNASSIGNED (-1). KC868-A6's relays sit entirely behind the PCF8574 I2C expander above, which has no PWM register at all - dimming here would need genuinely separate direct-GPIO pins wired to external MOSFET/SSR hardware, and which GPIOs are actually free after the relay I2C bus + onboard SX1278 LoRa socket + RS485/I2C peripherals is NOT yet verified against a real schematic (see agrumy-roadmap-todo.md #231's own explicit caveat) - do not assign a pin here without checking real hardware first.
@@ -125,6 +129,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int HX711_DOUT=-1; //UNDEFINED
     int HX711_SCK=-1; //UNDEFINED
 
+    int GPS_RX=-1; //UNDEFINED
+    int GPS_TX=-1; //UNDEFINED
+
     int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
 
     // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
@@ -152,6 +159,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int MAX31865_CS=-1; //UNDEFINED
     int HX711_DOUT=-1; //UNDEFINED
     int HX711_SCK=-1; //UNDEFINED
+
+    int GPS_RX=-1; //UNDEFINED
+    int GPS_TX=-1; //UNDEFINED
 
     int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
 

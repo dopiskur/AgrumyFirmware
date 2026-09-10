@@ -43,7 +43,8 @@ public:
     // Forwards to AgrumyClient::apiAuthenticate.
     void apiAuthenticate(const DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
     // deviceConfig is a reference so a received config can be hot-applied in place; returns true when that happened (no reboot), and the caller must then re-copy deviceConfig into its per-module value copies.
-    bool apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device);
+    // gpsLatitude/gpsLongitude: NAN (default) when this board has no GPS fix to report (see main.cpp's AGRUMY_GPS_ENABLED gate) - omitted from the payload rather than sent as 0,0.
+    bool apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device, double gpsLatitude = NAN, double gpsLongitude = NAN);
 
     // Best-effort, never checked or retried. commandId is included only when >= 0 (alongside EventType="CommandExecuted").
     void pushEvent(ServiceRequest service, String eventType, String message, int commandId = -1);

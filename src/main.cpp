@@ -122,6 +122,9 @@ void loop()
 #ifdef AGRUMY_KIT_KC868_A6
 #include "Controller/DisplayController.h"
 #endif
+#ifdef AGRUMY_GPS_ENABLED
+#include "Controller/GpsController.h"
+#endif
 
 // Injected by tools/firmware_version.py (git tag / FIRMWARE_VERSION env var); the fallback only covers a build that skipped extra_scripts.
 #ifndef FIRMWARE_VERSION
@@ -162,6 +165,9 @@ static bool loRaGatewayReady = false;
 
 #ifdef AGRUMY_KIT_KC868_A6
 DisplayController display;
+#endif
+#ifdef AGRUMY_GPS_ENABLED
+GpsController gps;
 #endif
 
 
@@ -287,6 +293,12 @@ void setup()
     Serial.println("[Main] OLED not detected - display disabled for this boot");
   }
 #endif
+#ifdef AGRUMY_GPS_ENABLED
+  if (!gps.begin(deviceConfig.configPin))
+  {
+    Serial.println("[Main] GPS_RX/GPS_TX not set for this board - GPS disabled for this boot");
+  }
+#endif
 
   // Arm the watchdog only now that setup (incl. the blocking WiFi portal/registration path) is done - those legitimately take longer than one loop cycle. esp_task_wdt_init() is a no-op if the WDT (arduino-esp32's own 5s default) is already initialized, so tear it down first.
   esp_task_wdt_deinit();
@@ -324,9 +336,17 @@ void loop()
     device.powerRailSecondary(true);
   }
 
+#ifdef AGRUMY_GPS_ENABLED
+  gps.tick();
+#endif
+
   // deviceConfig is passed by reference and is the single canonical instance, so a hot-applied config (no reboot) is visible to every module the instant apiConfig() returns.
   device.setLastPhase(PHASE_API_CONFIG);
+#ifdef AGRUMY_GPS_ENABLED
+  service.apiConfig(deviceConfig, serviceRequest, device, gps.hasFix() ? gps.latitude() : NAN, gps.hasFix() ? gps.longitude() : NAN);
+#else
   service.apiConfig(deviceConfig, serviceRequest, device);
+#endif
   // >0 only right after a 429 ("Wait") - skip the sensor push too, no point adding another request while the relay/server asked us to back off.
   bool waitingForServer = service.waitSeconds > 0;
 

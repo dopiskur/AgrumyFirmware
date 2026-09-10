@@ -406,7 +406,7 @@ bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequ
     return false;
 }
 
-bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device)
+bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest serviceRequest, DeviceController& device, double gpsLatitude, double gpsLongitude)
 {
     waitSeconds = 0; // only set below on a 429 ("Wait") response - stale from a previous cycle otherwise
     String configVersion=String(deviceConfig.configVersion);
@@ -429,6 +429,12 @@ bool ServiceController::apiConfig(DeviceConfig& deviceConfig, ServiceRequest ser
     payload["Board"] = AGRUMY_BOARD; // PlatformIO env name from the build flag, never guessed from the chip at runtime
     payload["Kit"] = AGRUMY_KIT;
     payload["ConfigSchemaVersion"] = CONFIG_SCHEMA_VERSION;
+    // GPS-reported device location; null when this board has no fix to report.
+    if (!isnan(gpsLatitude) && !isnan(gpsLongitude))
+    {
+        payload["Latitude"] = gpsLatitude;
+        payload["Longitude"] = gpsLongitude;
+    }
 
     serviceData = requestPost(payload, serviceRequest);
 
