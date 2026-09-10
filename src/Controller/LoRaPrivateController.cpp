@@ -2,6 +2,7 @@
 #include "Controller/StorageController.h"
 #include "Logic/BatteryLogic.h"
 #include "Logic/LoRaPrivatePayloadFramingLogic.h"
+#include "Logic/LoRaPrivateSessionLogic.h"
 #include <RadioLib.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -9,13 +10,16 @@
 #include <esp_task_wdt.h>
 #include <cstring>
 #include "mbedtls/gcm.h"
+#include "mbedtls/md.h"
+#include "bootloader_random.h"
+#include "esp_random.h"
 
 namespace
 {
     // Leading "/" required - LittleFS.exists()/open() reject a bare filename (confirmed on real ESP32-S3 hardware).
     const char *CONFIG_FILE = "/loraPrivateRegistration.json";
-    // 8 raw bytes, big-endian - separate from CONFIG_FILE so a per-uplink counter save is a small, fast, isolated write.
-    const char *COUNTER_FILE = "/loraPrivateCounter.dat";
+    // Roadmap #468 v2 HKDF info string - part of the session-key derivation contract shared with api.LoRa.LoRaPrivatePayloadCrypto, must match byte-for-byte.
+    const char *SESSION_KEY_INFO = "agrumy-lora-v2";
 
     // Heltec WiFi LoRa 32 V3 (ESP32-S3+SX1262) pin mapping - confirmed correct on real hardware (radio.begin() succeeds, 2026-09-06).
     const int PIN_SCK = 9;
@@ -36,17 +40,6 @@ namespace
     // Class-A-style RX1/RX2 downlink windows - confirmed reliable against real air time (SF9, two Heltec V3 boards, 2026-09-08); a real command from the Gateway host normally needs the extra serial round trip so it tends to land in RX2, the bridge's own immediate ack tends to land in RX1.
     const uint32_t DOWNLINK_RX1_TIMEOUT_MS = 1000;
     const uint32_t DOWNLINK_RX2_TIMEOUT_MS = 1000;
-
-    // True if an 8-byte downlink payload is the gateway's ack for this exact uplink counter (big-endian, same layout as LoRaPrivatePayloadFramingLogic's plaintext counter prefix).
-    bool isCounterAck(const std::string &payload, uint64_t counter)
-    {
-        uint64_t echoed = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            echoed = (echoed << 8) | (uint8_t)payload[i];
-        }
-        return echoed == counter;
-    }
 
     // Own SensorController::pushSensorData-shaped RAM-buffer-then-spill instance, in RTC slow memory (not a plain static) since deep sleep between cycles would otherwise wipe it every boot.
     // 8192 (SensorController's own threshold) overflows this chip's 8KB RTC_SLOW segment once DeviceController.cpp's rtc* variables and RTC_SLOW's own reserved slack are accounted for - trimmed down just enough to link.
@@ -126,52 +119,65 @@ bool LoRaPrivateController::loadConfig()
         privateKey[i] = (uint8_t)strtoul(pskHex.substring(i * 2, i * 2 + 2).c_str(), nullptr, 16);
     }
 
-    uplinkCounter = loadCounter();
     return true;
 }
 
-uint64_t LoRaPrivateController::loadCounter()
+bool LoRaPrivateController::deriveBootSession()
 {
-    if (!LittleFS.exists(COUNTER_FILE))
-    {
-        return 0;
-    }
-    File f = LittleFS.open(COUNTER_FILE, "r");
-    if (!f || f.size() < 8)
-    {
-        if (f)
-        {
-            f.close();
-        }
-        return 0;
-    }
-    uint64_t value = 0;
-    for (int i = 0; i < 8; i++)
-    {
-        value = (value << 8) | (uint8_t)f.read();
-    }
-    f.close();
-    return value;
-}
+    // bootloader_random_enable() requires WiFi/BT to be off - guaranteed on this profile (AGRUMY_PROFILE_LORA never touches either, see main.cpp's file header).
+    bootloader_random_enable();
+    esp_fill_random(bootNonce, sizeof(bootNonce));
+    bootloader_random_disable();
 
-bool LoRaPrivateController::saveCounter(uint64_t value)
-{
-    File f = LittleFS.open(COUNTER_FILE, "w");
-    if (!f)
+    bool allZero = true;
+    for (uint8_t b : bootNonce)
     {
+        if (b != 0)
+        {
+            allZero = false;
+            break;
+        }
+    }
+    if (allZero)
+    {
+        // Astronomically unlikely (1 in 2^64) for a working RNG - a real hit here means the hardware RNG itself is broken, which would silently break replay protection if transmission proceeded anyway.
+        Serial.println("[LoRaPrivate] RNG returned an all-zero bootNonce - refusing to transmit this boot (LoRaRngFault).");
         return false;
     }
-    for (int shift = 56; shift >= 0; shift -= 8)
+
+    // Hand-rolled RFC 5869 HKDF-SHA256 (extract + one expand round) instead of mbedtls_hkdf - this
+    // build's mbedtls doesn't link CONFIG_MBEDTLS_HKDF_C (confirmed: undefined reference at build
+    // time), while mbedtls_md_hmac is always available. One expand round is exact per RFC 5869,
+    // not an approximation, since the requested 16-byte output fits within a single 32-byte
+    // HMAC-SHA256 block (T(1) = HMAC(PRK, info || 0x01), OKM = first 16 bytes of T(1)).
+    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    uint8_t prk[32];
+    if (mbedtls_md_hmac(md, bootNonce, sizeof(bootNonce), privateKey, sizeof(privateKey), prk) != 0)
     {
-        f.write((uint8_t)((value >> shift) & 0xFF));
+        Serial.println("[LoRaPrivate] HKDF-extract failed");
+        return false;
     }
-    f.close();
+    size_t infoLen = strlen(SESSION_KEY_INFO);
+    uint8_t expandInput[32];
+    memcpy(expandInput, SESSION_KEY_INFO, infoLen);
+    expandInput[infoLen] = 0x01;
+    uint8_t t1[32];
+    if (mbedtls_md_hmac(md, prk, sizeof(prk), expandInput, infoLen + 1, t1) != 0)
+    {
+        Serial.println("[LoRaPrivate] HKDF-expand failed");
+        return false;
+    }
+    memcpy(sessionKey, t1, sizeof(sessionKey));
     return true;
 }
 
 bool LoRaPrivateController::begin()
 {
     if (!loadConfig())
+    {
+        return false;
+    }
+    if (!deriveBootSession())
     {
         return false;
     }
@@ -317,25 +323,17 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
     LoRaSensorReading reading = readSensors();
     std::string jsonPayload = encodeLoRaSensorUplink(reading);
 
-    // Counter saved BEFORE transmit, not after - a crash/power-loss between transmit and save could otherwise let the same counter (and its nonce) be reused on the next boot, which breaks AES-GCM's security guarantee.
-    uint64_t counter = uplinkCounter + 1;
-    if (!saveCounter(counter))
-    {
-        Serial.println("[LoRaPrivate] Could not persist uplink counter - skipping this uplink rather than risk nonce reuse.");
-        return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
-    }
+    // RAM-only, never persisted (roadmap #468) - replay protection is (bootNonce, counter) never repeating across boots, not the counter alone growing forever, so a plain in-memory increment is safe.
+    uint32_t counter = uplinkCounter + 1;
     uplinkCounter = counter;
 
-    uint8_t nonce[12] = {0}; // 4 zero bytes + the 8-byte counter, matching api.LoRa.LoRaPrivatePayloadCrypto's nonce derivation
-    for (int i = 0; i < 8; i++)
-    {
-        nonce[4 + i] = (uint8_t)((counter >> (56 - i * 8)) & 0xFF);
-    }
+    uint8_t nonce[12];
+    buildLoRaPrivateNonceV2(bootNonce, counter, nonce);
     std::string ciphertext(jsonPayload.size(), '\0');
     uint8_t tag[16];
     mbedtls_gcm_context gcm;
     mbedtls_gcm_init(&gcm);
-    mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, privateKey, 256);
+    mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES, sessionKey, 128); // sessionKey is the 16-byte HKDF output, not the 32-byte master privateKey
     int gcmResult = mbedtls_gcm_crypt_and_tag(&gcm, MBEDTLS_GCM_ENCRYPT, jsonPayload.size(), nonce, sizeof(nonce), nullptr, 0,
                                                (const unsigned char *)jsonPayload.data(), (unsigned char *)&ciphertext[0], sizeof(tag), tag);
     mbedtls_gcm_free(&gcm);
@@ -345,7 +343,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
 
-    std::string wirePayload = encodeLoRaPrivateCipherFrame(counter, ciphertext, tag);
+    std::string wirePayload = encodeLoRaPrivateCipherFrameV2(bootNonce, counter, ciphertext, tag);
     std::string frame = encodeLoRaPrivateFrame(gatewayAddress, nodeAddress, wirePayload);
 
     if (!backlogClear)
@@ -363,7 +361,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
         bufferFailedUplink(frame);
         return (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     }
-    Serial.printf("[LoRaPrivate] Sent %u encrypted bytes (counter=%llu) to gateway=%u\n", (unsigned)wirePayload.size(), (unsigned long long)counter, gatewayAddress);
+    Serial.printf("[LoRaPrivate] Sent %u encrypted bytes (counter=%u) to gateway=%u\n", (unsigned)wirePayload.size(), (unsigned)counter, gatewayAddress);
 
     uint32_t sleepSeconds = (uint32_t)loRaIntervalSecondsForNode(spreadingFactor, batteryPowered);
     bool acked = false;
@@ -390,10 +388,10 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
             continue;
         }
 
-        // An 8-byte payload echoing this uplink's own counter is the bridge's ack, not a command - see LoRaGatewayBridgeController::pollRadioForUplink.
-        if (downlink.payload.size() == 8 && isCounterAck(downlink.payload, counter))
+        // A 13-byte v2 payload echoing this uplink's own (bootNonce, counter) is the bridge's ack, not a command - see LoRaGatewayBridgeController::pollRadioForUplink.
+        if (isCounterAckV2(downlink.payload, bootNonce, counter))
         {
-            Serial.printf("[LoRaPrivate] Uplink counter=%llu acknowledged by gateway (RX%d)\n", (unsigned long long)counter, window + 1);
+            Serial.printf("[LoRaPrivate] Uplink counter=%u acknowledged by gateway (RX%d)\n", (unsigned)counter, window + 1);
             acked = true;
             break;
         }
@@ -408,7 +406,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
     }
     if (!acked)
     {
-        Serial.printf("[LoRaPrivate] Uplink counter=%llu not acknowledged\n", (unsigned long long)counter);
+        Serial.printf("[LoRaPrivate] Uplink counter=%u not acknowledged\n", (unsigned)counter);
     }
 
     return sleepSeconds;

@@ -121,10 +121,12 @@ void LoRaGatewayBridgeController::pollRadioForUplink()
 
     Serial.printf("[LoRaBridge] Uplink from node=%u rssi=%d len=%u: %s\n", frame.srcAddress, rssi, (unsigned)frame.payload.size(), frame.payload.c_str());
 
-    // Echoes the plaintext counter prefix (LoRaPrivatePayloadFramingLogic's [counter:8][ciphertext][tag] layout - this bridge never decrypts, so it never sees the rest) straight back over LoRa as the node's RX1-window ack, before the non-time-critical serial forward below.
-    if (frame.payload.size() >= 8)
+    // Echoes the plaintext prefix straight back over LoRa as the node's RX1-window ack, before the non-time-critical serial forward below - this bridge never decrypts, so it never sees anything past this prefix either way. Roadmap #468: a leading 0x02 is a v2 frame ([0x02][bootNonce:8][counter:4], 13-byte prefix); anything else is a v1 frame ([counter:8], 8-byte prefix) - both node generations are relayed by the same bridge during the rollout.
+    bool isV2 = !frame.payload.empty() && (uint8_t)frame.payload[0] == 0x02;
+    size_t ackPrefixLen = isV2 ? 13 : 8;
+    if (frame.payload.size() >= ackPrefixLen)
     {
-        std::string ackFrame = encodeLoRaPrivateFrame(frame.srcAddress, gatewayAddress, frame.payload.substr(0, 8));
+        std::string ackFrame = encodeLoRaPrivateFrame(frame.srcAddress, gatewayAddress, frame.payload.substr(0, ackPrefixLen));
         loRaBridgeRadio.transmit((const uint8_t *)ackFrame.data(), ackFrame.size());
     }
 

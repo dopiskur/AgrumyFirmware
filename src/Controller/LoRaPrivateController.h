@@ -27,8 +27,8 @@ public:
 private:
     bool loadConfig();
     LoRaSensorReading readSensors();
-    uint64_t loadCounter();
-    bool saveCounter(uint64_t value);
+    /// Seeds bootNonce from the hardware RNG and derives sessionKey via HKDF - false (refuses to transmit this boot) if the RNG ever hands back an all-zero nonce.
+    bool deriveBootSession();
 
     /// Retransmits /lorabuffer files then queued RTC-RAM frames, oldest first; false if frames are still queued after.
     bool flushBufferedUplinks();
@@ -44,10 +44,14 @@ private:
     int8_t txPowerDbm = 22;
     bool configLoaded = false;
 
-    // Roadmap #395 finding 3 - AES-256-GCM key for uplink encryption, hex-decoded from loraPrivateRegistration.json's "psk" field; a missing/malformed key is treated as "needs pre-provisioning", same as a missing config file.
+    // Roadmap #395 finding 3 - HKDF input key material, hex-decoded from loraPrivateRegistration.json's "psk" field; a missing/malformed key is treated as "needs pre-provisioning", same as a missing config file. Never used directly for encryption post-#468 - only sessionKey below is.
     uint8_t privateKey[32] = {0};
-    // Persisted separately from CONFIG_FILE (own small file) so a routine per-uplink counter save never risks rewriting/corrupting the provisioned psk/addresses.
-    uint64_t uplinkCounter = 0;
+    // Roadmap #468 - random per boot (hardware RNG), never persisted; replaces the old LittleFS-backed monotonic counter so a uplink costs zero flash writes.
+    uint8_t bootNonce[8] = {0};
+    // HKDF-SHA256(salt=bootNonce, ikm=privateKey, info="agrumy-lora-v2", length=16) - derived once per boot in deriveBootSession(), used for every uplink this boot.
+    uint8_t sessionKey[16] = {0};
+    // RAM-only, resets to 0 every boot - replay protection now rests on (bootNonce, counter) never repeating, not on the counter alone ever growing.
+    uint32_t uplinkCounter = 0;
 };
 
 #endif
