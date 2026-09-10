@@ -93,4 +93,65 @@ int foldTargetPercent(const int targetPercents[], const bool ruleIsTrue[], int c
 // WaterPump's own Threshold NaN handling - a stale/missing reading must not be read as "tank is fine".
 bool waterPumpBlockedByLowTank(double waterLevel, int rawEmpty, int rawFull, double minLevelPercent);
 
+// --- outputKind dispatch layer (unified demand model, every kind driven by the same 0-100 fold result) -----------
+
+// Mirror of cooldownActive (a min-OFF-time guard blocking a same-tick ON decision) for the min-ON-time direction -
+// blocks a same-tick OFF decision until minOnSeconds have passed since the last real ON transition, protecting a
+// compressor/pump from short-cycling. onSinceEpoch==0 (never tracked) or minOnSeconds<=0 never blocks.
+bool minOnTimeBlocksOff(time_t epochSeconds, time_t onSinceEpoch, int minOnSeconds);
+
+// Clamps a target percent's per-tick change to maxPercentPerSecond*elapsedSeconds (ramp/soft-start, protects a
+// motor/VFD from a step change) - maxPercentPerSecond<=0 or elapsedSeconds<=0 disables the ramp entirely (returns
+// targetPercent unchanged, the previous no-rate-limit behavior).
+int applyRateLimit(int currentPercent, int targetPercent, int maxPercentPerSecond, int elapsedSeconds);
+
+// A Relay slot's time-proportioning decorator: ON for the first percent% of every periodSeconds-second cycle,
+// grid-aligned off epochSeconds (same style as computeIntervalState) - turns a plain on/off relay into a
+// proportional "average power" output (e.g. a resistive heating element with no PWM/SSR input). periodSeconds<=0
+// falls back to a plain on/off decision (percent>0) - a slot with no period configured isn't using this decorator.
+bool computeTimeProportioningState(int percent, int periodSeconds, time_t epochSeconds);
+
+// Linear-maps a 0-100 target percent to a servo pulse width in microseconds between minPulseUs/maxPulseUs.
+int computeServoPulseUs(int percent, int minPulseUs, int maxPulseUs);
+
+// Linear-maps a 0-100 target percent to the ESP32's native 8-bit DAC range (0-255) - dacWrite() takes a raw
+// 0-255 value, not a percent.
+int computeAnalogDacValue(int percent);
+
+// Whether this tick's target crossed the 0/not-0 boundary since last tick, and which way to pulse - a
+// LatchingPulse valve holds position with zero standing current, so it is only ever driven by a brief H-bridge
+// pulse ON A TRANSITION, never continuously. +1 = pulse open (0->positive), -1 = pulse close (positive->0), 0 =
+// no pulse (including a percent change that stays positive - a latching valve is only ever fully open or fully
+// closed, not partially, so that needs no new pulse).
+int computeLatchingPulseAction(int previousPercent, int newPercent);
+
+// One tick's RelayPair motor decision (Screen/Vent style positional actuator on two relays, open direction and
+// close direction): given the currently tracked position (0-100, re-derived from 0 at boot - see AgrumyDevice's
+// ActuatorController) and this tick's target, decide which relay should drive and the resulting position after
+// elapsedSeconds of travel at travelSeconds-per-full-traverse. Interlocked by construction - exactly one of
+// openRelayOn/closeRelayOn is ever true, never both. A step that would reach or pass the target this tick clamps
+// to the target exactly, rather than overshooting.
+struct RelayPairDecision
+{
+    bool openRelayOn = false;
+    bool closeRelayOn = false;
+    int newPositionPercent = 0;
+};
+RelayPairDecision computeRelayPairStep(int currentPositionPercent, int targetPercent, int travelSeconds, int elapsedSeconds);
+
+// PID controller state - integral/lastError persist across ticks (one instance per PID-controlled function/slot).
+struct PidState
+{
+    double integral = 0.0;
+    double lastError = 0.0;
+    bool hasLastError = false;
+};
+
+// Standard Kp/Ki/Kd PID against (setpoint - reading), clamped to [outputMin,outputMax] and returned as a 0-100-ish
+// percent (whatever range the caller passes). Anti-windup: the CANDIDATE integral is clamped before being folded
+// into state.integral, so an already-saturated output can't accumulate an integral term it can never use once the
+// reading finally catches up. hasLastError false (first call) skips the derivative term - no prior reading to diff
+// against yet, rather than spiking off an assumed-zero delta.
+int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax);
+
 #endif

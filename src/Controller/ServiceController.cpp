@@ -95,10 +95,7 @@ void ServiceController::pushControllerData(ServiceRequest service, const Control
         JsonObject entry = array.add<JsonObject>();
         entry["relayFunction"] = changes[i].relayFunction;
         entry["isOn"] = changes[i].isOn;
-        if (changes[i].isPositional)
-        {
-            entry["percent"] = changes[i].percent;
-        }
+        entry["percent"] = changes[i].percent; // the fold's target percent for every function now, not just Screen/Vent
         entry["dateCreated"] = dateCreated;
     }
 

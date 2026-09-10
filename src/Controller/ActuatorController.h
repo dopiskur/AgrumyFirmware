@@ -11,6 +11,8 @@
 #include "../Logic/SleepScheduleLogic.h"
 #include "RelayIO.h"
 #include "PwmIO.h"
+#include "ServoIO.h"
+#include "AnalogIO.h"
 
 // Forward declarations instead of includes
 class DeviceController;
@@ -32,7 +34,7 @@ struct ActuatorStateLock
     ~ActuatorStateLock();
 };
 
-// Must match deviceTypeRelay's DB seed order (1=Ventilation, 2=Light, 3=Heating, 4=Water pump, 5=Screen, 6=Vent) - the Web admin dropdown stores this ID directly into one of ConfigController.relays[].relayFunction. Screen/Vent are POSITIONAL (a target percent, not on/off) - see initController's separate fold for them.
+// Must match deviceTypeRelay's DB seed order (1=Ventilation, 2=Light, 3=Heating, 4=Water pump, 5=Screen, 6=Vent) - the Web admin dropdown stores this ID directly into one of ConfigController.relays[].relayFunction. Every function folds through the same TargetPercent/MAX engine - Screen/Vent no longer get a separate fold, isPositionalRelayFunction is gone from initController's decision entirely.
 enum class RelayFunctionType
 {
     None = 0,
@@ -44,18 +46,14 @@ enum class RelayFunctionType
     Vent = 6,
 };
 
-// True for a positional actuator (target percent 0-100, not a plain on/off decision).
-bool isPositionalRelayFunction(RelayFunctionType function);
-
 // Highest RelayFunctionType value in use - sizes the per-function last-reported-state arrays below.
 static const int MAX_REPORTED_FUNCTIONS = 6;
 
-// One entry ActuatorController::consumeControllerDataChanges hands back - mirrors api.Models.ControllerDataPush's wire shape (relayFunction/isOn/percent), percent only meaningful when isPositional.
+// One entry ActuatorController::consumeControllerDataChanges hands back - mirrors api.Models.ControllerDataPush's wire shape (relayFunction/isOn/percent). percent is always the fold's target percent now, for every function.
 struct ControllerDataChange
 {
     int relayFunction = 0;
     bool isOn = false;
-    bool isPositional = false;
     int percent = 0;
 };
 
@@ -98,11 +96,12 @@ public:
     int consumeControllerDataChanges(ControllerDataChange changes[]) const;
 
 private:
-    // Walks ConfigController.relays[] and collects the physical pin of every slot assigned to relayFunction into pins[] (caller-provided, must hold MAX_RELAY_SLOTS). Returns how many were found.
-    int collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const;
-
-    // Roadmap #231 - same idea as collectPinsForFunction but for ConfigController.pwmSlots[], returning the resolved PWM_PINS[] pin + intensityPercent pairs (caller-provided arrays, must each hold MAX_PWM_SLOTS). Skips a slot whose PWM_PINS[slot-1] is -1 (unassigned on this board). Returns how many were found.
-    int collectPwmSlotsForFunction(RelayFunctionType relayFunction, int pins[MAX_PWM_SLOTS], int intensities[MAX_PWM_SLOTS]) const;
+    // Dispatches ONE physical slot (slotIndex, 0..MAX_RELAY_SLOTS-1, indexes every per-slot state
+    // array below) according to its own outputKind, given this function's raw fold/PID targetPercent for this
+    // tick. elapsedSeconds is time since THIS slot's own last dispatch (rate-limit/RelayPair travel math)-
+    // computed once per slot, not shared across slots, so a newly (re)assigned slot's first tick doesn't see a
+    // huge/garbage elapsed value.
+    void dispatchSlot(int slotIndex, const RelaySlot &slot, int rawTargetPercent, time_t epochSeconds) const;
 
     // Shared by initController()'s EmergencyStop/relayEnabled branch and forceAllRelaysOff().
     void driveEveryAssignedRelayOff() const;
@@ -148,6 +147,25 @@ private:
     time_t waterPumpOffSinceEpoch[MAX_RELAY_SLOTS] = {0};
     // Last tick's function assignment per physical slot index, so a remap (e.g. WaterPump->Light->WaterPump) can be detected and the stale slot's on/off-since history cleared instead of reused.
     int lastConfiguredType[MAX_RELAY_SLOTS] = {0};
+
+    // outputKind dispatch state, all indexed by physical slot (0..MAX_RELAY_SLOTS-1), cleared on a
+    // relayFunction remap same as waterPumpOnSinceEpoch/waterPumpOffSinceEpoch above (see initController's
+    // configuredType-vs-lastConfiguredType pass). lastAppliedPercent is the software-tracked "last thing this slot
+    // was actually told to do" - min-on/off and rate-limit both measure against it rather than a hardware
+    // readback, since a Pwm/Servo/Analog output has no readback path at all.
+    // mutable: dispatchSlot() and driveEveryAssignedRelayOff() (both called from const forceAllRelaysOff() as
+    // well as non-const initController()) need to update these.
+    mutable int lastAppliedPercent[MAX_RELAY_SLOTS] = {0};
+    mutable time_t slotOnSinceEpoch[MAX_RELAY_SLOTS] = {0};
+    mutable time_t slotOffSinceEpoch[MAX_RELAY_SLOTS] = {0};
+    mutable time_t lastDispatchEpoch[MAX_RELAY_SLOTS] = {0};
+    // RelayPair only - current tracked open/closed position (0-100), re-derived from 0 at boot (a real reboot
+    // physically de-energizes the motor, so there is no position left to remember - same reasoning as every other
+    // RAM-only safety/state array in this class).
+    mutable int relayPairPositionPercent[MAX_RELAY_SLOTS] = {0};
+    // PID controller state, one per RelayFunctionType (indexed function-1) - only meaningful while that
+    // function's FunctionControlConfig.controlMode is CONTROL_MODE_PID.
+    PidState pidStates[MAX_REPORTED_FUNCTIONS];
     String pendingSafetyEventMessage = "";
     mutable String pendingHardwareFaultMessage = "";
     mutable String pendingSensorStaleMessage = "";

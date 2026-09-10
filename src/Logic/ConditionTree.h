@@ -101,15 +101,15 @@ static const int MAX_NODES_PER_RULE = 8;
 
 // One automation rule: targetFunction plus a recursive ConditionNode tree (roadmap #396(4), replaces
 // the old flat left-to-right AND/OR fold - "(A AND B) OR (C AND D)" is now expressible via nested
-// GroupNodes, evaluated by RelayLogic::evaluateNode). Several Rules for the same targetFunction still
-// OR together on top of this, unchanged since before #212.
+// GroupNodes, evaluated by RelayLogic::evaluateNode). Several Rules for the same targetFunction fold
+// together by MAX'ing their targetPercent (foldTargetPercent), for every function.
 struct Rule
 {
     int targetFunction = 0; // RelayFunctionType raw value: 1=Ventilation,2=Light,3=Heating,4=WaterPump,5=Screen,6=Vent
     ConditionNode nodes[MAX_NODES_PER_RULE];
     int nodeCount = 0;
     int rootIndex = 0; // index into nodes[] of the tree's root
-    // Only meaningful for a positional targetFunction (Screen/Vent) - the position this rule commands while its tree evaluates true. 0 for every other function, ignored by the plain on/off fold.
+    // The demand (0-100) this rule asserts while its tree evaluates true, for every targetFunction - every function folds through foldTargetPercent now, not just Screen/Vent.
     int targetPercent = 0;
 };
 

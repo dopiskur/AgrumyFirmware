@@ -1,10 +1,9 @@
 #include "PwmIO.h"
 #include "../Model/DeviceModel.h"
 
-// 5kHz/8-bit is a standard safe default for DC MOSFET-driven dimming (grow-light LED strips, fan speed) -
-// well above the flicker-visible range and comfortably above most SSR/MOSFET switching limits, without the
-// audible whine some cheap MOSFETs produce well below 1kHz.
-static const uint32_t PWM_FREQUENCY_HZ = 5000;
+// 8-bit (256 steps) is plenty of resolution for DC MOSFET-driven dimming (grow-light LED strips, fan speed) at
+// any per-slot frequency the server configures - well above the flicker-visible range and comfortably above
+// most SSR/MOSFET switching limits when the admin picks a sane frequency (e.g. 25kHz ventilator, 1kHz LED).
 static const uint8_t PWM_RESOLUTION_BITS = 8;
 
 // This framework version only has the OLD channel-based LEDC API (ledcSetup/ledcAttachPin/ledcWrite(channel,...)),
@@ -12,7 +11,7 @@ static const uint8_t PWM_RESOLUTION_BITS = 8;
 // by a simple pin->channel lookup so pwmPinMode() stays idempotent to call every tick like RelayIO's relayPinMode.
 static int attachedPins[MAX_PWM_SLOTS] = {-1, -1, -1, -1};
 
-void pwmPinMode(int pin)
+void pwmPinMode(int pin, uint32_t frequencyHz)
 {
     for (int channel = 0; channel < MAX_PWM_SLOTS; channel++)
     {
@@ -25,7 +24,7 @@ void pwmPinMode(int pin)
     {
         if (attachedPins[channel] == -1)
         {
-            ledcSetup(channel, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+            ledcSetup(channel, frequencyHz > 0 ? frequencyHz : 1000, PWM_RESOLUTION_BITS);
             ledcAttachPin(pin, channel);
             attachedPins[channel] = pin;
             return;

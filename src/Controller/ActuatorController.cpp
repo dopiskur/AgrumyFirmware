@@ -71,48 +71,138 @@ void ActuatorController::setupController(){
 }
 
 // Only slots the server actually assigned arrive in deviceConfig.configController.relays[0..relayCount) - an unlisted slot is unassigned, nothing to collect for it.
-int ActuatorController::collectPinsForFunction(RelayFunctionType relayFunction, int pins[MAX_RELAY_SLOTS]) const
+// One physical slot's outputKind dispatch, after this function's rate-limit-agnostic decisions
+// (rain veto, manual override, the 0/100 reconciliation) already finalized rawTargetPercent. elapsedSeconds is
+// derived from this SLOT's own lastDispatchEpoch, not shared across slots, so a slot assigned for the first time
+// this tick sees elapsedSeconds 0 (no rate-limit/travel step at all - the caller of applyRateLimit/
+// computeRelayPairStep already treats elapsedSeconds<=0 as "hold position").
+void ActuatorController::dispatchSlot(int slotIndex, const RelaySlot &slot, int rawTargetPercent, time_t epochSeconds) const
 {
-    int count = 0;
-    for (int i = 0; i < deviceConfig.configController.relayCount; i++)
-    {
-        const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
-        if (relaySlot.relayFunction == (int)relayFunction && relaySlot.slot >= 1 && relaySlot.slot <= MAX_RELAY_SLOTS)
-        {
-            int pin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
-            if (pin >= 0) // -1 means this board has no physical pin at this slot - a misconfigured server assignment, not a real relay
-            {
-                pins[count++] = pin;
-            }
-        }
-    }
-    return count;
-}
+    int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
+    int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
+    int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
+    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
 
-// Roadmap #231 - only slots the server actually assigned arrive in deviceConfig.configController.pwmSlots[0..pwmSlotCount); a slot whose board has no real PWM pin at that position (PWM_PINS[slot-1] == -1) is silently skipped, same convention as collectPinsForFunction's relay-pin check above.
-int ActuatorController::collectPwmSlotsForFunction(RelayFunctionType relayFunction, int pins[MAX_PWM_SLOTS], int intensities[MAX_PWM_SLOTS]) const
-{
-    int count = 0;
-    for (int i = 0; i < deviceConfig.configController.pwmSlotCount; i++)
-    {
-        const PwmSlot &pwmSlot = deviceConfig.configController.pwmSlots[i];
-        if (pwmSlot.relayFunction == (int)relayFunction && pwmSlot.slot >= 1 && pwmSlot.slot <= MAX_PWM_SLOTS)
-        {
-            int pin = deviceConfig.configPin.PWM_PINS[pwmSlot.slot - 1];
-            if (pin >= 0)
-            {
-                pins[count] = pin;
-                intensities[count] = pwmSlot.intensityPercent;
-                count++;
-            }
-        }
-    }
-    return count;
-}
+    time_t lastEpoch = lastDispatchEpoch[slotIndex];
+    int elapsedSeconds = lastEpoch == 0 ? 0 : (int)(epochSeconds - lastEpoch);
+    lastDispatchEpoch[slotIndex] = epochSeconds;
 
-bool isPositionalRelayFunction(RelayFunctionType function)
-{
-    return function == RelayFunctionType::Screen || function == RelayFunctionType::Vent;
+    int appliedPercent = rawTargetPercent;
+
+    switch (slot.outputKind)
+    {
+    case OUTPUT_KIND_RELAY:
+    {
+        int pin = deviceConfig.configPin.RELAY_PINS[slot.slot - 1];
+        if (pin < 0)
+        {
+            return; // this board has no physical pin at this slot - a misconfigured server assignment, not a real relay
+        }
+        bool previousOn = lastAppliedPercent[slotIndex] > 0;
+        bool wantsOn = rawTargetPercent > 0;
+        // Min-on/off protects a compressor/pump from short-cycling - cooldownActive already exists (WaterPump's own dedicated min-off check), minOnTimeBlocksOff is its mirror for the min-on direction.
+        bool blockedOn = wantsOn && !previousOn && cooldownActive(epochSeconds, slotOffSinceEpoch[slotIndex], slot.minOffSeconds);
+        bool blockedOff = !wantsOn && previousOn && minOnTimeBlocksOff(epochSeconds, slotOnSinceEpoch[slotIndex], slot.minOnSeconds);
+        bool finalOn = blockedOn ? false : (blockedOff ? true : wantsOn);
+        relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
+        relayWrite(pin, finalOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        appliedPercent = finalOn ? 100 : 0;
+        break;
+    }
+    case OUTPUT_KIND_RELAY_PAIR:
+    {
+        int openPin = deviceConfig.configPin.RELAY_PINS[slot.slot - 1];
+        int closePin = (slot.pairSlot >= 1 && slot.pairSlot <= MAX_RELAY_SLOTS) ? deviceConfig.configPin.RELAY_PINS[slot.pairSlot - 1] : -1;
+        if (openPin < 0 || closePin < 0)
+        {
+            return;
+        }
+        RelayPairDecision decision = computeRelayPairStep(relayPairPositionPercent[slotIndex], rawTargetPercent, slot.travelSeconds, elapsedSeconds);
+        relayPairPositionPercent[slotIndex] = decision.newPositionPercent;
+        relayPinMode(openPin, i2cAddr, i2cSda, i2cScl);
+        relayPinMode(closePin, i2cAddr, i2cSda, i2cScl);
+        relayWrite(openPin, decision.openRelayOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        relayWrite(closePin, decision.closeRelayOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        appliedPercent = decision.newPositionPercent;
+        break;
+    }
+    case OUTPUT_KIND_PWM:
+    {
+        int pin = deviceConfig.configPin.PWM_PINS[slot.slot - 1];
+        if (pin < 0)
+        {
+            return;
+        }
+        int rateLimited = applyRateLimit(lastAppliedPercent[slotIndex], rawTargetPercent, slot.rateLimitPercentPerSecond, elapsedSeconds);
+        pwmPinMode(pin, (uint32_t)(slot.pwmFrequencyHz > 0 ? slot.pwmFrequencyHz : 1000));
+        pwmWrite(pin, rateLimited);
+        appliedPercent = rateLimited;
+        break;
+    }
+    case OUTPUT_KIND_ANALOG_0_10V:
+    {
+        int pin = deviceConfig.configPin.ANALOG_PINS[slot.slot - 1];
+        if (pin < 0)
+        {
+            return;
+        }
+        int rateLimited = applyRateLimit(lastAppliedPercent[slotIndex], rawTargetPercent, slot.rateLimitPercentPerSecond, elapsedSeconds);
+        analogPinMode(pin);
+        analogWrite8Bit(pin, computeAnalogDacValue(rateLimited));
+        appliedPercent = rateLimited;
+        break;
+    }
+    case OUTPUT_KIND_SERVO:
+    {
+        int pin = deviceConfig.configPin.SERVO_PINS[slot.slot - 1];
+        if (pin < 0)
+        {
+            return;
+        }
+        int rateLimited = applyRateLimit(lastAppliedPercent[slotIndex], rawTargetPercent, slot.rateLimitPercentPerSecond, elapsedSeconds);
+        servoPinMode(pin);
+        servoWrite(pin, computeServoPulseUs(rateLimited, slot.servoMinPulseUs, slot.servoMaxPulseUs));
+        appliedPercent = rateLimited;
+        break;
+    }
+    case OUTPUT_KIND_LATCHING_PULSE:
+    {
+        int openPin = deviceConfig.configPin.RELAY_PINS[slot.slot - 1];
+        int closePin = (slot.pairSlot >= 1 && slot.pairSlot <= MAX_RELAY_SLOTS) ? deviceConfig.configPin.RELAY_PINS[slot.pairSlot - 1] : -1;
+        if (openPin < 0 || closePin < 0)
+        {
+            return;
+        }
+        int action = computeLatchingPulseAction(lastAppliedPercent[slotIndex], rawTargetPercent);
+        if (action != 0)
+        {
+            int pulsePin = action > 0 ? openPin : closePin;
+            relayPinMode(pulsePin, i2cAddr, i2cSda, i2cScl);
+            relayWrite(pulsePin, true, i2cAddr, i2cSda, i2cScl, activeLow);
+            // Brief H-bridge pulse, zero standing current after - a blocking wait is safe here, this task's own 2s tick (RELAY_TASK_TICK_MS) has ample budget and nothing else shares this FreeRTOS task.
+            delay(slot.latchingPulseMs > 0 ? slot.latchingPulseMs : 250);
+            relayWrite(pulsePin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+        }
+        appliedPercent = rawTargetPercent;
+        break;
+    }
+    default:
+        return;
+    }
+
+    bool nowOn = appliedPercent > 0;
+    bool wasOn = lastAppliedPercent[slotIndex] > 0;
+    if (nowOn && !wasOn)
+    {
+        slotOnSinceEpoch[slotIndex] = epochSeconds;
+        slotOffSinceEpoch[slotIndex] = 0;
+    }
+    if (!nowOn && wasOn)
+    {
+        slotOffSinceEpoch[slotIndex] = epochSeconds;
+        slotOnSinceEpoch[slotIndex] = 0;
+    }
+    lastAppliedPercent[slotIndex] = appliedPercent;
 }
 
 // Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (roadmap #396(4) made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
@@ -264,6 +354,8 @@ void ActuatorController::applyWaterPumpSafetyLimits(int slotIndex, int pin, time
         waterPumpOnSinceEpoch[slotIndex] = 0;
     }
 
+    lastAppliedPercent[slotIndex] = finalState ? 100 : 0; // keeps isRelayOn()/rate-limit tracking in sync with this override, which bypasses dispatchSlot() entirely
+
     if (finalState != desiredState)
     {
         relayWrite(pin, finalState, i2cAddr, i2cSda, i2cScl, activeLow);
@@ -371,6 +463,10 @@ void ActuatorController::driveEveryAssignedRelayOff() const
     int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
     bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
 
+    // Per-outputKind emergency-stop table: Relay->off, Pwm/Analog->0, RelayPair->STOP (both
+    // relays off, does NOT attempt to close - a mid-travel motor just holds wherever it physically is), Servo->
+    // its own configured safe position, LatchingPulse->a close impulse (a defined safe state, not "leave it
+    // however it last was" - zero standing current either way once the pulse ends).
     for (int i = 0; i < deviceConfig.configController.relayCount; i++)
     {
         const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
@@ -378,36 +474,92 @@ void ActuatorController::driveEveryAssignedRelayOff() const
         {
             continue;
         }
-        int pin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
-        if (pin < 0)
+        switch (relaySlot.outputKind)
         {
-            continue;
+        case OUTPUT_KIND_RELAY:
+        {
+            int pin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
+            if (pin >= 0)
+            {
+                relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
+                relayWrite(pin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+            }
+            break;
         }
-        relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
-        relayWrite(pin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+        case OUTPUT_KIND_RELAY_PAIR:
+        {
+            int openPin = deviceConfig.configPin.RELAY_PINS[relaySlot.slot - 1];
+            int closePin = (relaySlot.pairSlot >= 1 && relaySlot.pairSlot <= MAX_RELAY_SLOTS) ? deviceConfig.configPin.RELAY_PINS[relaySlot.pairSlot - 1] : -1;
+            if (openPin >= 0)
+            {
+                relayPinMode(openPin, i2cAddr, i2cSda, i2cScl);
+                relayWrite(openPin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+            }
+            if (closePin >= 0)
+            {
+                relayPinMode(closePin, i2cAddr, i2cSda, i2cScl);
+                relayWrite(closePin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+            }
+            break;
+        }
+        case OUTPUT_KIND_PWM:
+        {
+            int pin = deviceConfig.configPin.PWM_PINS[relaySlot.slot - 1];
+            if (pin >= 0)
+            {
+                pwmPinMode(pin, (uint32_t)(relaySlot.pwmFrequencyHz > 0 ? relaySlot.pwmFrequencyHz : 1000));
+                pwmWrite(pin, 0);
+            }
+            break;
+        }
+        case OUTPUT_KIND_ANALOG_0_10V:
+        {
+            int pin = deviceConfig.configPin.ANALOG_PINS[relaySlot.slot - 1];
+            if (pin >= 0)
+            {
+                analogPinMode(pin);
+                analogWrite8Bit(pin, 0);
+            }
+            break;
+        }
+        case OUTPUT_KIND_SERVO:
+        {
+            int pin = deviceConfig.configPin.SERVO_PINS[relaySlot.slot - 1];
+            if (pin >= 0)
+            {
+                servoPinMode(pin);
+                servoWrite(pin, computeServoPulseUs(relaySlot.servoSafePositionPercent, relaySlot.servoMinPulseUs, relaySlot.servoMaxPulseUs));
+            }
+            break;
+        }
+        case OUTPUT_KIND_LATCHING_PULSE:
+        {
+            int closePin = (relaySlot.pairSlot >= 1 && relaySlot.pairSlot <= MAX_RELAY_SLOTS) ? deviceConfig.configPin.RELAY_PINS[relaySlot.pairSlot - 1] : -1;
+            if (closePin >= 0)
+            {
+                relayPinMode(closePin, i2cAddr, i2cSda, i2cScl);
+                relayWrite(closePin, true, i2cAddr, i2cSda, i2cScl, activeLow);
+                delay(relaySlot.latchingPulseMs > 0 ? relaySlot.latchingPulseMs : 250);
+                relayWrite(closePin, false, i2cAddr, i2cSda, i2cScl, activeLow);
+            }
+            break;
+        }
+        default:
+            break;
+        }
+        // Every dispatched slot is now genuinely off/at-rest - reset its tracking so the next real tick's rate-limit/min-on-off/travel math starts fresh instead of ramping from a stale pre-stop value.
+        int slotIndex = relaySlot.slot - 1;
+        lastAppliedPercent[slotIndex] = 0;
+        relayPairPositionPercent[slotIndex] = 0;
+        slotOnSinceEpoch[slotIndex] = 0;
+        slotOffSinceEpoch[slotIndex] = 0;
+        lastDispatchEpoch[slotIndex] = 0;
     }
 
     // See initController()'s matching check for why this is checked right after every relayWrite pass.
     if (relayI2CFaulted())
     {
         reportHardwareFault("I2C write to relay expander failed while forcing relays off - physical relay state may not match commanded state");
-    }
-
-    // EmergencyStop/relayEnabled=false must silence PWM outputs too, not just relays - a proportional signal left at its last duty cycle would keep driving a fan/light at speed while the admin believes everything is off.
-    for (int i = 0; i < deviceConfig.configController.pwmSlotCount; i++)
-    {
-        const PwmSlot &pwmSlot = deviceConfig.configController.pwmSlots[i];
-        if (pwmSlot.slot < 1 || pwmSlot.slot > MAX_PWM_SLOTS)
-        {
-            continue;
-        }
-        int pin = deviceConfig.configPin.PWM_PINS[pwmSlot.slot - 1];
-        if (pin < 0)
-        {
-            continue;
-        }
-        pwmPinMode(pin);
-        pwmWrite(pin, 0);
     }
 
     // The Fleet page must reflect EmergencyStop/relayEnabled=false immediately, not keep showing whatever was last decided before this tick forced everything off.
@@ -431,18 +583,18 @@ void ActuatorController::forceAllRelaysOff() const
 bool ActuatorController::isRelayOn(RelayFunctionType relayFunction) const
 {
     ActuatorStateLock lock;
-    int pins[MAX_RELAY_SLOTS];
-    int pinCount = collectPinsForFunction(relayFunction, pins);
-    if (pinCount == 0)
+    // Software-tracked (lastAppliedPercent), not a hardware readback - works uniformly across every outputKind
+    // (a Pwm/Servo/Analog output has no readback path at all), and applyWaterPumpSafetyLimits keeps this in sync
+    // with its own post-safety-limit override, so it is never stale relative to what was actually just dispatched.
+    for (int i = 0; i < deviceConfig.configController.relayCount; i++)
     {
-        return false;
+        const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
+        if (relaySlot.relayFunction == (int)relayFunction && relaySlot.slot >= 1 && relaySlot.slot <= MAX_RELAY_SLOTS)
+        {
+            return lastAppliedPercent[relaySlot.slot - 1] > 0;
+        }
     }
-    int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
-    int i2cSda = deviceConfig.configPin.RELAY_I2C_SDA;
-    int i2cScl = deviceConfig.configPin.RELAY_I2C_SCL;
-    bool activeLow = deviceConfig.configPin.RELAY_ACTIVE_LOW;
-    relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
-    return relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
+    return false;
 }
 
 void ActuatorController::recordControllerState(RelayFunctionType function, bool isOn, int percent) const
@@ -452,8 +604,7 @@ void ActuatorController::recordControllerState(RelayFunctionType function, bool 
     {
         return;
     }
-    bool positional = isPositionalRelayFunction(function);
-    if (isOn == lastReportedOn[idx] && (!positional || percent == lastReportedPercent[idx]))
+    if (isOn == lastReportedOn[idx] && percent == lastReportedPercent[idx])
     {
         return; // no change since the last report - the wire contract only sends a CHANGE, not a periodic state dump
     }
@@ -463,7 +614,6 @@ void ActuatorController::recordControllerState(RelayFunctionType function, bool 
     ControllerDataChange &entry = pendingControllerDataChanges[pendingControllerDataChangeCount++];
     entry.relayFunction = (int)function;
     entry.isOn = isOn;
-    entry.isPositional = positional;
     entry.percent = percent;
 }
 
@@ -491,12 +641,14 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
 
     // Densify the sparse relays[] list into a per-physical-slot lookup - waterPump*SinceEpoch/lastConfiguredType below are indexed by physical slot (0..MAX_RELAY_SLOTS-1), not by position in relays[].
     int configuredType[MAX_RELAY_SLOTS] = {0};
+    int configuredOutputKind[MAX_RELAY_SLOTS] = {0};
     for (int i = 0; i < deviceConfig.configController.relayCount; i++)
     {
         const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
         if (relaySlot.slot >= 1 && relaySlot.slot <= MAX_RELAY_SLOTS)
         {
             configuredType[relaySlot.slot - 1] = relaySlot.relayFunction;
+            configuredOutputKind[relaySlot.slot - 1] = relaySlot.outputKind;
         }
     }
     const int *relayPin = deviceConfig.configPin.RELAY_PINS;
@@ -525,46 +677,52 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
     int localWeekday = localTm->tm_wday;      // 0=Sunday..6=Saturday
     int localSecondsOfDay = localTm->tm_hour * 3600 + localTm->tm_min * 60 + localTm->tm_sec;
 
-    // ONE pass per relay function: every rule targeting it is OR'd together (any rule saying "on" wins) for a
-    // binary function, or MAX'd to a target percent for a positional one (Screen/Vent) - either way, the single
-    // result is written to every pin/PWM output assigned to it.
+    // ONE pass per relay function: every rule targeting it MAX-folds to a target percent - same engine for
+    // every function now, not just Screen/Vent, and the single result is written to every pin/PWM output
+    // assigned to it.
     const RelayFunctionType functions[6] = {
         RelayFunctionType::Ventilation, RelayFunctionType::Light,
         RelayFunctionType::Heating, RelayFunctionType::WaterPump,
         RelayFunctionType::Screen, RelayFunctionType::Vent,
     };
+    // WaterPump's Relay-kind slots need their reconciled demand carried from the function loop below into the
+    // dedicated safety-limit pass that follows it - see that pass's own remarks.
+    int waterPumpTargetPercentThisTick = 0;
     for (RelayFunctionType function : functions)
     {
-        int pins[MAX_RELAY_SLOTS];
-        int pinCount = collectPinsForFunction(function, pins);
-        // Mirrors this function's decision onto any dedicated PWM output assigned to it. Collected
-        // BEFORE the empty-check below, since a positional function (Screen/Vent) may be PWM-only with no plain
-        // relay slot at all - Inert on every board today, PWM_PINS ships all-UNASSIGNED until a real schematic
-        // confirms free GPIOs.
-        int pwmPins[MAX_PWM_SLOTS];
-        int pwmIntensities[MAX_PWM_SLOTS];
-        int pwmCount = collectPwmSlotsForFunction(function, pwmPins, pwmIntensities);
-        if (pinCount == 0 && pwmCount == 0)
+        int idx = (int)function - 1;
+        bool anySlot = false;
+        for (int i = 0; i < deviceConfig.configController.relayCount; i++)
         {
-            continue; // no relay slot and no PWM output assigned to this function
+            if (deviceConfig.configController.relays[i].relayFunction == (int)function)
+            {
+                anySlot = true;
+                break;
+            }
+        }
+        if (!anySlot)
+        {
+            continue; // no output assigned to this function at all
         }
 
-        // Threshold rules need the function's CURRENT physical state for hysteresis math - read once from the
-        // first assigned relay pin; every pin sharing one function is kept in sync by the write below, so any one
-        // is representative. A PWM-only positional function (no relay pin at all) has no physical state to read
-        // back yet - starts every tick from "was off", a known limitation shared with PWM_PINS itself being unwired.
-        bool isCurrentlyOn = false;
-        if (pinCount > 0)
-        {
-            relayPinMode(pins[0], i2cAddr, i2cSda, i2cScl);
-            isCurrentlyOn = relayRead(pins[0], i2cAddr, i2cSda, i2cScl, activeLow);
-        }
+        // Threshold rules (and evaluateManualOverride's Target mode) need the function's CURRENT state for
+        // hysteresis math - the software-tracked last-reported value, not a hardware readback (works uniformly
+        // across every outputKind, and a function's FIRST tick correctly starts from "was off").
+        bool isCurrentlyOn = lastReportedOn[idx];
 
-        bool shouldBeOn = false;
-        int targetPercent = 0;
-        if (isPositionalRelayFunction(function))
+        int targetPercent;
+        const FunctionControlConfig &control = deviceConfig.configController.functionControl[idx];
+        if (control.controlMode == CONTROL_MODE_PID)
         {
-            // A positional function's rules don't OR to a plain bool, they MAX to a target percent (foldTargetPercent) - the highest-demanding currently-true rule wins.
+            // PID bypasses the rule fold entirely for this function - see FunctionControlConfig's own remarks.
+            double reading = readingForTargetMetric(control.pidSetpointMetric, sensorData);
+            targetPercent = isnan(reading) ? 0 // no reading this cycle - fail closed, same convention evaluateCondition already uses for a missing/stale sensor
+                                            : pidCompute(pidStates[idx], control.pidSetpoint, reading, control.pidKp, control.pidKi, control.pidKd, control.pidSampleIntervalSeconds, 0, 100);
+        }
+        else
+        {
+            // Every function's rules MAX-fold to a target percent (foldTargetPercent) - the highest-demanding
+            // currently-true rule wins, same engine for a plain on/off function as a positional one.
             int targetPercents[MAX_RULES];
             bool ruleIsTrue[MAX_RULES];
             int matchingRuleCount = 0;
@@ -580,28 +738,16 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
                 matchingRuleCount++;
             }
             targetPercent = foldTargetPercent(targetPercents, ruleIsTrue, matchingRuleCount);
-            shouldBeOn = targetPercent > 0;
         }
-        else
-        {
-            for (int i = 0; i < deviceConfig.configController.ruleCount; i++)
-            {
-                const Rule &rule = deviceConfig.configController.rules[i];
-                if (rule.targetFunction == (int)function &&
-                    evaluateRule(rule, sensorData, epochSeconds, localWeekday, localSecondsOfDay, isCurrentlyOn))
-                {
-                    shouldBeOn = true;
-                }
-            }
-        }
+        bool shouldBeOn = targetPercent > 0;
 
-        // Final AND-NOT gate applied AFTER the OR above - a Weather condition can't be a Rule like Threshold/Interval/Schedule, since OR-combining rules means it could only ever ADD a reason to turn WaterPump on, never suppress one.
+        // Final AND-NOT gate applied AFTER the fold above - a Weather condition can't be a Rule like Threshold/Interval/Schedule, since folding rules together means it could only ever ADD a reason to turn WaterPump on, never suppress one.
         if (function == RelayFunctionType::WaterPump && deviceConfig.configController.skipWaterPumpForRain)
         {
             shouldBeOn = false;
         }
 
-        // Roadmap #219: a manual command WINS over both the automated rules' OR result above and the rain veto - an admin explicitly asking for this function to run right now is a deliberate bypass of automation, not another vote in it.
+        // A manual command WINS over both the automated rules' fold above and the rain veto - an admin explicitly asking for this function to run right now is a deliberate bypass of automation, not another vote in it.
         if (const ManualOverride *manualOverride = findManualOverride(function))
         {
             double reading = readingForTargetMetric(manualOverride->targetMetric, sensorData);
@@ -615,20 +761,36 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
             // else: Target mode but the metric is missing this cycle (sensor absent/disabled) - fall through, keep whatever the automated rules above already decided, same NAN-safety convention as evaluateCondition.
         }
 
-        for (int i = 0; i < pinCount; i++)
+        // The rain veto and manual override above can flip shouldBeOn independently of the fold/PID that produced
+        // targetPercent - reconcile so the two can never contradict each other on the wire (e.g. isOn=true,
+        // percent=0 from a manual-on override the automated rules never asked for). A real automated-fold/PID
+        // percent (shouldBeOn already agrees with it) passes through untouched.
+        if (!shouldBeOn)
         {
-            relayPinMode(pins[i], i2cAddr, i2cSda, i2cScl);
-            relayWrite(pins[i], shouldBeOn, i2cAddr, i2cSda, i2cScl, activeLow);
+            targetPercent = 0;
+        }
+        else if (targetPercent == 0)
+        {
+            targetPercent = 100;
         }
 
-        // A positional function drives its PWM output straight to the rule-commanded targetPercent (bypassing the
-        // slot's own intensityPercent dial entirely - "open to 30%" means 30%, not 30% of some other admin-set
-        // brightness); a binary function keeps mirroring shouldBeOn onto intensityPercent unchanged.
-        for (int i = 0; i < pwmCount; i++)
+        // Dispatch to every physical slot assigned to this function - each slot's own outputKind/rate-limit/
+        // min-on-off/etc. is applied independently, not a single shared pins[]/pwmPins[] write.
+        for (int i = 0; i < deviceConfig.configController.relayCount; i++)
         {
-            pwmPinMode(pwmPins[i]);
-            int duty = isPositionalRelayFunction(function) ? computePwmDutyPercent(shouldBeOn, targetPercent) : computePwmDutyPercent(shouldBeOn, pwmIntensities[i]);
-            pwmWrite(pwmPins[i], duty);
+            const RelaySlot &relaySlot = deviceConfig.configController.relays[i];
+            if (relaySlot.relayFunction != (int)function || relaySlot.slot < 1 || relaySlot.slot > MAX_RELAY_SLOTS)
+            {
+                continue;
+            }
+            // WaterPump's Relay-kind slots are dispatched by the dedicated safety-limit pass below instead (it
+            // needs its own on/off decision AFTER threshold/interval/schedule to still be able to force it off) -
+            // every other outputKind/function goes straight through dispatchSlot().
+            if (function == RelayFunctionType::WaterPump && relaySlot.outputKind == OUTPUT_KIND_RELAY)
+            {
+                continue;
+            }
+            dispatchSlot(relaySlot.slot - 1, relaySlot, targetPercent, epochSeconds);
         }
 
         // WaterPump is recorded separately below, AFTER its own safety-limit pass - that pass can still force it off this same tick, so recording shouldBeOn here would misreport a pump the safety limit is about to override. No such later override exists for any other function.
@@ -636,13 +798,26 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         {
             recordControllerState(function, shouldBeOn, targetPercent);
         }
+        else
+        {
+            // A non-Relay WaterPump slot (Pwm/Analog/etc, already dispatched above) still needs its safety-limit
+            // math even though this codebase doesn't yet enforce the run-time-ceiling/cooldown/low-tank guard on
+            // a non-Relay output physically - see applyWaterPumpSafetyLimits' own Relay-only scope below. Stash
+            // this tick's pre-safety-limit demand for the Relay-kind pass to start from.
+            waterPumpTargetPercentThisTick = targetPercent;
+        }
     }
 
-    // Safety limits are applied per PHYSICAL SLOT (not once for the function, unlike the loop above) - each relay slot sharing the WaterPump function keeps its own independent on/off-since history. Reuses configuredType/relayPin declared at the top of this function.
+    // Safety limits are applied per PHYSICAL SLOT (not once for the function, unlike the loop above) - each relay slot sharing the WaterPump function keeps its own independent on/off-since history. Reuses configuredType/relayPin declared at the top of this function. Relay-kind only - a WaterPump slot assigned a different outputKind (Pwm-driven VFD pump, say) was already dispatched by the loop above with no run-time-ceiling/cooldown/low-tank guard applied; generalizing that guard to every outputKind is still open work.
     for (int i = 0; i < MAX_RELAY_SLOTS; i++)
     {
-        if ((RelayFunctionType)configuredType[i] == RelayFunctionType::WaterPump && relayPin[i] >= 0)
+        if ((RelayFunctionType)configuredType[i] == RelayFunctionType::WaterPump && configuredOutputKind[i] == OUTPUT_KIND_RELAY && relayPin[i] >= 0)
         {
+            // desiredState comes from a real pin read inside applyWaterPumpSafetyLimits, so this slot's Relay
+            // write must happen first - mirror the same reconciled targetPercent every other function's slots
+            // already got, before the safety-limit pass reads it back.
+            relayPinMode(relayPin[i], i2cAddr, i2cSda, i2cScl);
+            relayWrite(relayPin[i], waterPumpTargetPercentThisTick > 0, i2cAddr, i2cSda, i2cScl, activeLow);
             applyWaterPumpSafetyLimits(i, relayPin[i], epochSeconds, sensorData.waterLevel);
         }
     }

@@ -104,6 +104,125 @@ int computePwmDutyPercent(bool shouldBeOn, int intensityPercent)
     return intensityPercent < 0 ? 0 : (intensityPercent > 100 ? 100 : intensityPercent);
 }
 
+bool minOnTimeBlocksOff(time_t epochSeconds, time_t onSinceEpoch, int minOnSeconds)
+{
+    return minOnSeconds > 0 && onSinceEpoch != 0 && (epochSeconds - onSinceEpoch) < (time_t)minOnSeconds;
+}
+
+int applyRateLimit(int currentPercent, int targetPercent, int maxPercentPerSecond, int elapsedSeconds)
+{
+    if (maxPercentPerSecond <= 0 || elapsedSeconds <= 0)
+    {
+        return targetPercent;
+    }
+    int maxStep = maxPercentPerSecond * elapsedSeconds;
+    int delta = targetPercent - currentPercent;
+    if (delta > maxStep)
+    {
+        return currentPercent + maxStep;
+    }
+    if (delta < -maxStep)
+    {
+        return currentPercent - maxStep;
+    }
+    return targetPercent;
+}
+
+bool computeTimeProportioningState(int percent, int periodSeconds, time_t epochSeconds)
+{
+    int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+    if (periodSeconds <= 0)
+    {
+        return clamped > 0;
+    }
+    unsigned long positionInCycle = (unsigned long)epochSeconds % (unsigned long)periodSeconds;
+    unsigned long onSeconds = (unsigned long)periodSeconds * (unsigned long)clamped / 100UL;
+    return positionInCycle < onSeconds;
+}
+
+int computeServoPulseUs(int percent, int minPulseUs, int maxPulseUs)
+{
+    int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+    return minPulseUs + (maxPulseUs - minPulseUs) * clamped / 100;
+}
+
+int computeAnalogDacValue(int percent)
+{
+    int clamped = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+    return clamped * 255 / 100;
+}
+
+int computeLatchingPulseAction(int previousPercent, int newPercent)
+{
+    bool wasOpen = previousPercent > 0;
+    bool isOpen = newPercent > 0;
+    if (!wasOpen && isOpen)
+    {
+        return 1;
+    }
+    if (wasOpen && !isOpen)
+    {
+        return -1;
+    }
+    return 0;
+}
+
+RelayPairDecision computeRelayPairStep(int currentPositionPercent, int targetPercent, int travelSeconds, int elapsedSeconds)
+{
+    RelayPairDecision result;
+    int clampedTarget = targetPercent < 0 ? 0 : (targetPercent > 100 ? 100 : targetPercent);
+    int clampedCurrent = currentPositionPercent < 0 ? 0 : (currentPositionPercent > 100 ? 100 : currentPositionPercent);
+    if (travelSeconds <= 0 || elapsedSeconds <= 0 || clampedCurrent == clampedTarget)
+    {
+        result.newPositionPercent = clampedCurrent;
+        return result;
+    }
+    int stepPercent = elapsedSeconds * 100 / travelSeconds;
+    if (stepPercent < 1)
+    {
+        stepPercent = 1; // guarantee forward progress even when a long travelSeconds/short tick would otherwise round to a stall
+    }
+    if (clampedTarget > clampedCurrent)
+    {
+        result.openRelayOn = true;
+        int next = clampedCurrent + stepPercent;
+        result.newPositionPercent = next > clampedTarget ? clampedTarget : next;
+    }
+    else
+    {
+        result.closeRelayOn = true;
+        int next = clampedCurrent - stepPercent;
+        result.newPositionPercent = next < clampedTarget ? clampedTarget : next;
+    }
+    return result;
+}
+
+int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax)
+{
+    double error = setpoint - reading;
+    double integralCandidate = state.integral + error * (sampleIntervalSeconds > 0 ? sampleIntervalSeconds : 0.0);
+    double iTermCandidate = ki * integralCandidate;
+    // Clamp the CANDIDATE integral pre-emptively (anti-windup) - an already-saturated output must not keep
+    // accumulating integral it can never use once the reading finally catches up to setpoint.
+    if (ki != 0.0 && iTermCandidate > outputMax)
+    {
+        integralCandidate = outputMax / ki;
+    }
+    if (ki != 0.0 && iTermCandidate < outputMin)
+    {
+        integralCandidate = outputMin / ki;
+    }
+    state.integral = integralCandidate;
+
+    double derivative = (state.hasLastError && sampleIntervalSeconds > 0) ? (error - state.lastError) / sampleIntervalSeconds : 0.0;
+    state.lastError = error;
+    state.hasLastError = true;
+
+    double output = kp * error + ki * state.integral + kd * derivative;
+    output = output > outputMax ? outputMax : (output < outputMin ? outputMin : output);
+    return (int)(output + (output >= 0 ? 0.5 : -0.5)); // round to nearest int
+}
+
 int foldTargetPercent(const int targetPercents[], const bool ruleIsTrue[], int count)
 {
     int best = 0;

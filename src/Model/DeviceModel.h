@@ -102,6 +102,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     // Roadmap #231 - all UNASSIGNED (-1). KC868-A6's relays sit entirely behind the PCF8574 I2C expander above, which has no PWM register at all - dimming here would need genuinely separate direct-GPIO pins wired to external MOSFET/SSR hardware, and which GPIOs are actually free after the relay I2C bus + onboard SX1278 LoRa socket + RS485/I2C peripherals is NOT yet verified against a real schematic (see agrumy-roadmap-todo.md #231's own explicit caveat) - do not assign a pin here without checking real hardware first.
     int PWM_PINS[4] = {-1, -1, -1, -1};
+    // Same "all UNASSIGNED until a real schematic confirms free GPIOs" caveat as PWM_PINS above. This ESP32 (not S3) variant does have a native DAC, but its two DAC-capable pins are not yet checked against what the PCF8574/LoRa/RS485 peripherals above already claim.
+    int ANALOG_PINS[4] = {-1, -1, -1, -1};
+    int SERVO_PINS[4] = {-1, -1, -1, -1};
 #elif defined(AGRUMY_KIT_ESP32S3_RELAY6CH)
     // Not physically verified against real hardware (confirm before first field deploy) - direct GPIO, same digitalWrite/pinMode model as esp32dev/esp32s3usbotg, no I2C expander on this kit.
     int POWER_RAIL_PRIMARY=-1; //UNDEFINED
@@ -134,6 +137,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
     int PWM_PINS[4] = {-1, -1, -1, -1};
+    // Same caveat as PWM_PINS. This is an S3 target, which has NO native DAC peripheral at all (dropped from the S3 silicon) - Analog0to10V here would need an external I2C DAC (e.g. MCP4725), not yet wired on any board, so this stays unassigned regardless of schematic.
+    int ANALOG_PINS[4] = {-1, -1, -1, -1};
+    int SERVO_PINS[4] = {-1, -1, -1, -1};
 #else
     int POWER_RAIL_PRIMARY=2;
     int POWER_RAIL_SECONDARY=15;
@@ -165,6 +171,9 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
     int PWM_PINS[4] = {-1, -1, -1, -1};
+    // Same caveat as PWM_PINS. This #else branch covers both classic-ESP32 (esp32dev, has a native DAC on GPIO25/26 - already claimed by RELAY_PINS above on this board) and several S3 targets (esp32s3usbotg, the Heltec/LoRa environments - no native DAC at all), so a single shared value here can't be chip-correct for all of them; stays unassigned until a per-build variant is split out.
+    int ANALOG_PINS[4] = {-1, -1, -1, -1};
+    int SERVO_PINS[4] = {-1, -1, -1, -1};
 #endif
 
     // SDA/SCL only meaningful when RELAY_I2C_ADDRESS is nonzero (else direct GPIO, no I2C expander).
@@ -233,22 +242,71 @@ static const int MAX_RELAY_SLOTS = 8;
 // Roadmap #231 - separate cap from MAX_RELAY_SLOTS since PWM outputs use their own dedicated ConfigPin.PWM_PINS array, never shared with the relay bank.
 static const int MAX_PWM_SLOTS = 4;
 
+// Same "own dedicated ConfigPin array" reasoning as MAX_PWM_SLOTS, for the Analog0to10V/Servo outputKinds.
+static const int MAX_ANALOG_SLOTS = 4;
+static const int MAX_SERVO_SLOTS = 4;
+
+// Highest RelayFunctionType value in use - same count as ActuatorController.h's MAX_REPORTED_FUNCTIONS, kept as an independent constant here since this header must not depend on ActuatorController.h (the include runs the other way).
+static const int RELAY_FUNCTION_COUNT = 6;
+
 // Floor for sleepSeconds, applied at parse time regardless of server-side validation - same value ActuatorController::computeNextWakeSeconds already floors sleep-schedule boundaries to, so both stay in agreement.
 static const int MIN_SLEEP_SECONDS = 30;
 
-// One physically-wired relay position (Slot, 1-based, indexes ConfigPin.RELAY_PINS[Slot-1]) and which RelayFunctionType it's assigned to - only slots the server actually assigned arrive over the wire, an unlisted slot is unassigned.
+// Unified demand model - which physical output type a RelaySlot drives, and consequently which
+// ConfigPin array `slot` indexes into. Relay is the migration default (every slot the server sent before this
+// field existed behaves exactly as it always did - same RELAY_PINS[slot-1] on/off write).
+enum OutputKindType
+{
+    OUTPUT_KIND_RELAY = 1,          // RELAY_PINS[slot-1], on/off
+    OUTPUT_KIND_RELAY_PAIR = 2,     // RELAY_PINS[slot-1]=open, RELAY_PINS[pairSlot-1]=close, driven by travelSeconds
+    OUTPUT_KIND_PWM = 3,            // PWM_PINS[slot-1], duty = targetPercent directly
+    OUTPUT_KIND_ANALOG_0_10V = 4,   // ANALOG_PINS[slot-1] (native ESP32 DAC only - classic ESP32, not S3), 0-255 raw value
+    OUTPUT_KIND_SERVO = 5,          // SERVO_PINS[slot-1], 50Hz pulse between servoMinPulseUs/servoMaxPulseUs
+    OUTPUT_KIND_LATCHING_PULSE = 6, // RELAY_PINS[slot-1]=open coil, RELAY_PINS[pairSlot-1]=close coil, brief pulse only on a 0/not-0 transition
+};
+
+// One physically-wired output position (Slot, 1-based - which ConfigPin array it indexes depends on outputKind,
+// see OutputKindType) and which RelayFunctionType it's assigned to - only slots the server actually assigned
+// arrive over the wire, an unlisted slot is unassigned. Every field below outputKind is only meaningful for the
+// outputKind(s) noted on it; 0/default is always "not using this feature" for a kind it doesn't apply to.
 struct RelaySlot
 {
     int slot = 0;
     int relayFunction = 0;
+    int outputKind = OUTPUT_KIND_RELAY;
+    int pairSlot = 0;                    // RelayPair/LatchingPulse only - the second physical relay slot (also indexes RELAY_PINS)
+    int travelSeconds = 0;               // RelayPair only - full 0->100 traversal time; <=0 means "not moving" (see computeRelayPairStep)
+    int pwmFrequencyHz = 1000;           // Pwm only - LEDC frequency
+    int servoMinPulseUs = 1000;
+    int servoMaxPulseUs = 2000;
+    int servoSafePositionPercent = 0;    // Servo only - emergency-stop target position
+    int latchingPulseMs = 250;
+    int rateLimitPercentPerSecond = 0;   // every kind - 0 disables the ramp (see applyRateLimit)
+    int minOnSeconds = 0;                // Relay/RelayPair only - 0 disables (see minOnTimeBlocksOff)
+    int minOffSeconds = 0;               // Relay/RelayPair only - 0 disables (see cooldownActive, reused generically)
+    int timeProportioningPeriodSeconds = 0; // Relay only - 0 means "not using this decorator" (see computeTimeProportioningState)
 };
 
-// Roadmap #231 - one dedicated PWM output position (Slot, 1-based, indexes ConfigPin.PWM_PINS[Slot-1]), mirroring a relay function's on/off decision as a proportional signal rather than driving its own independent state - see ActuatorController::initController's remarks. Only takes effect when relayFunction also has a RelaySlot assigned (no relay assignment means no on/off decision to mirror), and only when the target board's PWM_PINS[Slot-1] is actually assigned (>=0) - every board ships with all four UNASSIGNED until a real schematic confirms free GPIOs.
-struct PwmSlot
+// A RelayFunction's control mode: Threshold (default) evaluates its Rules and MAX-folds them as
+// always; PID bypasses the rule fold entirely and computes targetPercent from a setpoint/reading via
+// RelayLogic::pidCompute instead (still subject to the same rate-limit/min-on-off/outputKind dispatch below it).
+enum ControlModeType
 {
-    int slot = 0;
-    int relayFunction = 0;
-    int intensityPercent = 100;
+    CONTROL_MODE_THRESHOLD = 0,
+    CONTROL_MODE_PID = 1,
+};
+
+// One per RelayFunctionType (indexed function-1, same convention as ActuatorController's lastReportedOn[]) -
+// present only when controlMode is PID; a Threshold-mode function has no meaningful fields here beyond controlMode.
+struct FunctionControlConfig
+{
+    int controlMode = CONTROL_MODE_THRESHOLD;
+    int pidSetpointMetric = 0; // SensorMetric raw value - which reading pidCompute's `reading` argument comes from
+    double pidSetpoint = 0;
+    double pidKp = 0;
+    double pidKi = 0;
+    double pidKd = 0;
+    double pidSampleIntervalSeconds = 0;
 };
 
 // Roadmap #219.
@@ -313,9 +371,9 @@ struct ConfigController
     RelaySlot relays[MAX_RELAY_SLOTS];
     int relayCount = 0;
 
-    // Roadmap #231 - see PwmSlot's own remarks.
-    PwmSlot pwmSlots[MAX_PWM_SLOTS];
-    int pwmSlotCount = 0;
+    // Indexed function-1 (same convention as ActuatorController's lastReportedOn[]) - always present, one per
+    // RelayFunctionType, CONTROL_MODE_THRESHOLD (the ordinary rule fold) by default.
+    FunctionControlConfig functionControl[RELAY_FUNCTION_COUNT];
 };
 
 

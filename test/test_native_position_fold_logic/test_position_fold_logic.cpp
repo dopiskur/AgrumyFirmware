@@ -1,3 +1,6 @@
+// ActuatorController::initController now calls foldTargetPercent for EVERY relay function, not just
+// Screen/Vent - the function itself is already agnostic to which RelayFunctionType is folding (plain
+// int arrays), so these cases prove the fold correct regardless of which function calls it.
 #include <unity.h>
 #include "../../src/Logic/RelayLogic.h"
 

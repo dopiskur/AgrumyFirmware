@@ -59,7 +59,7 @@ bool parseRule(JsonObject r, Rule &outRule)
 {
     Rule candidate;
     candidate.targetFunction = r["relayFunction"];
-    candidate.targetPercent = r["targetPercent"] | 0; // only meaningful for a positional function (Screen/Vent), ignored otherwise
+    candidate.targetPercent = r["targetPercent"] | 0; // every Relay rule's fold input now, not just Screen/Vent
     candidate.nodeCount = 0;
     JsonObject rootJson = r["root"];
     int rootIndex = rootJson.isNull() ? -1 : parseConditionNode(rootJson, candidate);

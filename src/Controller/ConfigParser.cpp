@@ -260,7 +260,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
 
     currentConfig.configController.relayEnabled = deviceConfigController["relayEnabled"];
 
-    // Capped at MAX_RELAY_SLOTS - same "ArduinoJson has no dynamic growth on-device" reasoning as rules above; only slots the server actually assigned ride along, an unlisted slot is unassigned.
+    // Capped at MAX_RELAY_SLOTS - same "ArduinoJson has no dynamic growth on-device" reasoning as rules above; only slots the server actually assigned ride along, an unlisted slot is unassigned. outputKind and every kind-specific field ride the same slot object now (the old separate pwmSlots[] array is gone, a Pwm-output function is just a relays[] entry with outputKind=Pwm).
     JsonArray relays = deviceConfigController["relays"];
     currentConfig.configController.relayCount = 0;
     for (JsonObject r : relays)
@@ -272,23 +272,39 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
         RelaySlot &relaySlot = currentConfig.configController.relays[currentConfig.configController.relayCount];
         relaySlot.slot = r["slot"];
         relaySlot.relayFunction = r["relayFunction"];
+        relaySlot.outputKind = r["outputKind"] | OUTPUT_KIND_RELAY;
+        relaySlot.pairSlot = r["pairSlot"] | 0;
+        relaySlot.travelSeconds = r["travelSeconds"] | 0;
+        relaySlot.pwmFrequencyHz = r["pwmFrequencyHz"] | 1000;
+        relaySlot.servoMinPulseUs = r["servoMinPulseUs"] | 1000;
+        relaySlot.servoMaxPulseUs = r["servoMaxPulseUs"] | 2000;
+        relaySlot.servoSafePositionPercent = r["servoSafePositionPercent"] | 0;
+        relaySlot.latchingPulseMs = r["latchingPulseMs"] | 250;
+        relaySlot.rateLimitPercentPerSecond = r["rateLimitPercentPerSecond"] | 0;
+        relaySlot.minOnSeconds = r["minOnSeconds"] | 0;
+        relaySlot.minOffSeconds = r["minOffSeconds"] | 0;
+        relaySlot.timeProportioningPeriodSeconds = r["timeProportioningPeriodSeconds"] | 0;
         currentConfig.configController.relayCount++;
     }
 
-    // Roadmap #231 - capped at MAX_PWM_SLOTS, same "ArduinoJson has no dynamic growth on-device" reasoning as relays above. Absent entirely (server never sends pwmSlots) parses to pwmSlotCount 0, same as an empty array.
-    JsonArray pwmSlots = deviceConfigController["pwmSlots"];
-    currentConfig.configController.pwmSlotCount = 0;
-    for (JsonObject p : pwmSlots)
+    // One entry per RelayFunctionType (1..RELAY_FUNCTION_COUNT), indexed function-1; absent entirely (server never sends functionControl, or a function's own entry is missing) parses to CONTROL_MODE_THRESHOLD (the default-initialized struct), same as today's ordinary rule fold.
+    JsonArray functionControl = deviceConfigController["functionControl"];
+    for (JsonObject fc : functionControl)
     {
-        if (currentConfig.configController.pwmSlotCount >= MAX_PWM_SLOTS)
+        int function = fc["relayFunction"] | 0;
+        int idx = function - 1;
+        if (idx < 0 || idx >= RELAY_FUNCTION_COUNT)
         {
-            break;
+            continue;
         }
-        PwmSlot &pwmSlot = currentConfig.configController.pwmSlots[currentConfig.configController.pwmSlotCount];
-        pwmSlot.slot = p["slot"];
-        pwmSlot.relayFunction = p["relayFunction"];
-        pwmSlot.intensityPercent = p["intensityPercent"] | 100;
-        currentConfig.configController.pwmSlotCount++;
+        FunctionControlConfig &control = currentConfig.configController.functionControl[idx];
+        control.controlMode = fc["controlMode"] | CONTROL_MODE_THRESHOLD;
+        control.pidSetpointMetric = fc["pidSetpointMetric"] | 0;
+        control.pidSetpoint = fc["pidSetpoint"] | 0.0;
+        control.pidKp = fc["pidKp"] | 0.0;
+        control.pidKi = fc["pidKi"] | 0.0;
+        control.pidKd = fc["pidKd"] | 0.0;
+        control.pidSampleIntervalSeconds = fc["pidSampleIntervalSeconds"] | 0.0;
     }
   }
 }
