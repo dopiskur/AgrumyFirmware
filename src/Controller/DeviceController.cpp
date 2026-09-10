@@ -341,8 +341,6 @@ bool DeviceController::tryReadSerialProvisioning(unsigned long timeoutMs)
   JsonDocument mqttConfigJson;
   mqttConfigJson["brokerHost"] = "";
   mqttConfigJson["brokerPort"] = 1883;
-  mqttConfigJson["username"] = "";
-  mqttConfigJson["password"] = "";
   mqttConfigJson["persistentCommandChannel"] = false;
   String mqttData;
   serializeJsonPretty(mqttConfigJson, mqttData);
@@ -380,11 +378,10 @@ void DeviceController::initializeDevice()
   WiFiManagerParameter servicePoint("servicePoint", "Service Point (default:api.agrumy.com)", deviceRegistration.servicePoint, 256);
   WiFiManagerParameter deviceDisplayName("displayName", "Device Name (optional)", deviceRegistration.displayName, 64);
 
+  // No username/password fields here - MqttController authenticates with this device's own apiId/apiKey, known only after registerDevice() completes, not yet at portal time.
   MqttConfig mqttRegistration;
   WiFiManagerParameter mqttHost("mqttHost", "MQTT Broker (optional, blank=disabled)", mqttRegistration.brokerHost, 128);
   WiFiManagerParameter mqttPort("mqttPort", "MQTT Port (1883, 8883=TLS)", mqttRegistration.brokerPort, 6);
-  WiFiManagerParameter mqttUser("mqttUser", "MQTT Username (optional)", mqttRegistration.username, 64);
-  WiFiManagerParameter mqttPass("mqttPass", "MQTT Password (optional)", mqttRegistration.password, 64);
   // Checkbox custom-HTML param (tzapu/WiFiManager convention) - "T" back means checked, unset means unchecked; only meaningful when brokerHost above is non-blank.
   WiFiManagerParameter mqttPersistent("mqttPersistent", "Persistent command channel (mains-powered only)", "T", 2, "type=\"checkbox\"", WFM_LABEL_AFTER);
 
@@ -394,8 +391,6 @@ void DeviceController::initializeDevice()
   wifiManager.addParameter(&deviceDisplayName);
   wifiManager.addParameter(&mqttHost);
   wifiManager.addParameter(&mqttPort);
-  wifiManager.addParameter(&mqttUser);
-  wifiManager.addParameter(&mqttPass);
   wifiManager.addParameter(&mqttPersistent);
 
   wifiManager.startConfigPortal(("Agrumy_" + macAddr()).c_str());
@@ -416,10 +411,6 @@ void DeviceController::initializeDevice()
   mqttRegistration.brokerHost[sizeof(mqttRegistration.brokerHost) - 1] = 0;
   strncpy(mqttRegistration.brokerPort, mqttPort.getValue(), sizeof(mqttRegistration.brokerPort) - 1);
   mqttRegistration.brokerPort[sizeof(mqttRegistration.brokerPort) - 1] = 0;
-  strncpy(mqttRegistration.username, mqttUser.getValue(), sizeof(mqttRegistration.username) - 1);
-  mqttRegistration.username[sizeof(mqttRegistration.username) - 1] = 0;
-  strncpy(mqttRegistration.password, mqttPass.getValue(), sizeof(mqttRegistration.password) - 1);
-  mqttRegistration.password[sizeof(mqttRegistration.password) - 1] = 0;
 
 
   JsonDocument config;
@@ -445,8 +436,6 @@ void DeviceController::initializeDevice()
   JsonDocument mqttConfigJson;
   mqttConfigJson["brokerHost"] = mqttRegistration.brokerHost;
   mqttConfigJson["brokerPort"] = strlen(mqttRegistration.brokerPort) > 0 ? atoi(mqttRegistration.brokerPort) : 1883;
-  mqttConfigJson["username"] = mqttRegistration.username;
-  mqttConfigJson["password"] = mqttRegistration.password;
   mqttConfigJson["persistentCommandChannel"] = strcmp(mqttPersistent.getValue(), "T") == 0;
   String mqttData;
   serializeJsonPretty(mqttConfigJson, mqttData);

@@ -20,13 +20,11 @@ struct DeviceRegistration
   bool initialize=false;
 };
 
-// Saved to its own mqttConfig.json, not deviceRegistration.json, so broker credentials never ride along in registerDevice()'s server-bound payload; brokerHost empty means MQTT publishing is disabled.
+// Saved to its own mqttConfig.json, not deviceRegistration.json, so the broker HOST never rides along in registerDevice()'s server-bound payload; brokerHost empty means MQTT publishing is disabled. Username/password are no longer stored here - MqttController derives them from this device's own apiId/apiKey at runtime, the same credential it already uses for HTTP.
 struct MqttConfig
 {
   char brokerHost[128] = "";
   char brokerPort[6] = "1883"; // port 8883 selects TLS (WiFiClientSecure + the same CA bundle as HTTPS)
-  char username[64] = "";
-  char password[64] = "";
 };
 
 struct EventLog

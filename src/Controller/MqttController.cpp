@@ -112,9 +112,10 @@ void MqttController::begin(DeviceController& device)
 
     brokerHost = doc["brokerHost"] | "";
     brokerPort = doc["brokerPort"] | 1883;
-    username = doc["username"] | "";
-    password = doc["password"] | "";
     persistentCommandChannel = doc["persistentCommandChannel"] | false;
+    // Broker credentials are this device's own apiId/apiKey, not a mqttConfig.json field - the broker's acl_file (tools/Agrumy.MqttCredentialSync) scopes each apiId to only its own topic tree.
+    username = deviceConfig.apiId;
+    password = deviceConfig.apiKey;
 
     if (brokerHost.isEmpty())
     {
