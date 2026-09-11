@@ -4,11 +4,10 @@
 #include <cstdint>
 #include <string>
 
-// Pure byte-layout helpers for the LoRa private-protocol v2 wire format (roadmap #468) - no crypto,
-// no Arduino/mbedtls dependency, so these are native-testable against contracts/lora-private-v2.vectors.json
-// the same way LoRaPrivatePayloadFramingLogic.cpp is for v1. Actual HKDF/AES-GCM stay in
-// LoRaPrivateController.cpp (ESP32/mbedtls-only) and are verified against the same vectors on the
-// AgrumyService (C#) side plus real hardware, per the roadmap's "Hardversko verificiranje" section.
+// Pure byte-layout helpers for the LoRa private-protocol wire format - no crypto, no Arduino/mbedtls
+// dependency, so these are native-testable against contracts/lora-private-v2.vectors.json. Actual
+// HKDF/AES-GCM stay in LoRaPrivateController.cpp (ESP32/mbedtls-only) and are verified against the
+// same vectors on the AgrumyService (C#) side plus real hardware.
 
 /// v2 GCM nonce = bootNonce(8) || counter(4, big-endian), exactly 12 bytes.
 void buildLoRaPrivateNonceV2(const uint8_t bootNonce[8], uint32_t counter, uint8_t nonceOut[12]);

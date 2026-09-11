@@ -67,7 +67,7 @@ void test_FrameV2_MatchesSharedVector_Counter1(void)
     std::string frame = encodeLoRaPrivateCipherFrameV2(V1_BOOT_NONCE, V1_COUNTER, ciphertext, V1_TAG);
     std::string expected = hexToBytes(V1_FRAME_HEX);
     TEST_ASSERT_EQUAL_UINT32(expected.size(), frame.size());
-    TEST_ASSERT_EQUAL_UINT8(0x02, (uint8_t)frame[0]); // leading version byte, distinguishes from v1's naturally-zero-leading counter prefix
+    TEST_ASSERT_EQUAL_UINT8(0x02, (uint8_t)frame[0]); // leading version byte, rejected by the decoder on any other value
     TEST_ASSERT_EQUAL_MEMORY(expected.data(), frame.data(), expected.size());
 }
 
@@ -98,11 +98,11 @@ void test_IsCounterAckV2_RejectsWrongBootNonce(void)
     TEST_ASSERT_FALSE(isCounterAckV2(ack, V2_BOOT_NONCE, V1_COUNTER));
 }
 
-void test_IsCounterAckV2_RejectsV1StyleShorterPayload(void)
+void test_IsCounterAckV2_RejectsShorterPayload(void)
 {
-    // A v1 ack is 8 raw bytes, no leading version tag - must never be mistaken for a v2 ack.
-    std::string v1Ack = hexToBytes("0000000000000001");
-    TEST_ASSERT_FALSE(isCounterAckV2(v1Ack, V1_BOOT_NONCE, 1));
+    // 8 raw bytes with no leading version tag must never be mistaken for a valid ack.
+    std::string shortAck = hexToBytes("0000000000000001");
+    TEST_ASSERT_FALSE(isCounterAckV2(shortAck, V1_BOOT_NONCE, 1));
 }
 
 int main(int argc, char **argv)
@@ -115,6 +115,6 @@ int main(int argc, char **argv)
     RUN_TEST(test_IsCounterAckV2_MatchesOwnBootNonceAndCounter);
     RUN_TEST(test_IsCounterAckV2_RejectsWrongCounter);
     RUN_TEST(test_IsCounterAckV2_RejectsWrongBootNonce);
-    RUN_TEST(test_IsCounterAckV2_RejectsV1StyleShorterPayload);
+    RUN_TEST(test_IsCounterAckV2_RejectsShorterPayload);
     return UNITY_END();
 }

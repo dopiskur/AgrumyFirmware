@@ -1,7 +1,6 @@
 #include "Controller/LoRaPrivateController.h"
 #include "Controller/StorageController.h"
 #include "Logic/BatteryLogic.h"
-#include "Logic/LoRaPrivatePayloadFramingLogic.h"
 #include "Logic/LoRaPrivateSessionLogic.h"
 #include <RadioLib.h>
 #include <LittleFS.h>
@@ -18,7 +17,7 @@ namespace
 {
     // Leading "/" required - LittleFS.exists()/open() reject a bare filename (confirmed on real ESP32-S3 hardware).
     const char *CONFIG_FILE = "/loraPrivateRegistration.json";
-    // Roadmap #468 v2 HKDF info string - part of the session-key derivation contract shared with api.LoRa.LoRaPrivatePayloadCrypto, must match byte-for-byte.
+    // HKDF info string - part of the session-key derivation contract shared with api.LoRa.LoRaPrivatePayloadCrypto, must match byte-for-byte.
     const char *SESSION_KEY_INFO = "agrumy-lora-v2";
 
     // Heltec WiFi LoRa 32 V3 (ESP32-S3+SX1262) pin mapping - confirmed correct on real hardware (radio.begin() succeeds, 2026-09-06).
@@ -323,7 +322,7 @@ uint32_t LoRaPrivateController::runCycleAndGetSleepSeconds(bool batteryPowered)
     LoRaSensorReading reading = readSensors();
     std::string jsonPayload = encodeLoRaSensorUplink(reading);
 
-    // RAM-only, never persisted (roadmap #468) - replay protection is (bootNonce, counter) never repeating across boots, not the counter alone growing forever, so a plain in-memory increment is safe.
+    // RAM-only, never persisted - replay protection is (bootNonce, counter) never repeating across boots, not the counter alone growing forever, so a plain in-memory increment is safe.
     uint32_t counter = uplinkCounter + 1;
     uplinkCounter = counter;
 

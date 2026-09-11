@@ -44,9 +44,9 @@ private:
     int8_t txPowerDbm = 22;
     bool configLoaded = false;
 
-    // Roadmap #395 finding 3 - HKDF input key material, hex-decoded from loraPrivateRegistration.json's "psk" field; a missing/malformed key is treated as "needs pre-provisioning", same as a missing config file. Never used directly for encryption post-#468 - only sessionKey below is.
+    // HKDF input key material, hex-decoded from loraPrivateRegistration.json's "psk" field; a missing/malformed key is treated as "needs pre-provisioning", same as a missing config file. Never used directly for encryption - only sessionKey below is.
     uint8_t privateKey[32] = {0};
-    // Roadmap #468 - random per boot (hardware RNG), never persisted; replaces the old LittleFS-backed monotonic counter so a uplink costs zero flash writes.
+    // Random per boot (hardware RNG), never persisted - a uplink costs zero flash writes.
     uint8_t bootNonce[8] = {0};
     // HKDF-SHA256(salt=bootNonce, ikm=privateKey, info="agrumy-lora-v2", length=16) - derived once per boot in deriveBootSession(), used for every uplink this boot.
     uint8_t sessionKey[16] = {0};
