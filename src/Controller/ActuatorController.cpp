@@ -117,7 +117,8 @@ void ActuatorController::dispatchSlot(int slotIndex, const RelaySlot &slot, int 
         {
             return;
         }
-        RelayPairDecision decision = computeRelayPairStep(relayPairPositionPercent[slotIndex], rawTargetPercent, slot.travelSeconds, elapsedSeconds);
+        RelayPairDecision decision = computeRelayPairStep(relayPairStates[slotIndex], relayPairPositionPercent[slotIndex],
+                                                           rawTargetPercent, slot.travelSeconds, slot.deadTimeSeconds, elapsedSeconds);
         relayPairPositionPercent[slotIndex] = decision.newPositionPercent;
         relayPinMode(openPin, i2cAddr, i2cSda, i2cScl);
         relayPinMode(closePin, i2cAddr, i2cSda, i2cScl);

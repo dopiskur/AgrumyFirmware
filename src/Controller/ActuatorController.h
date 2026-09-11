@@ -163,6 +163,8 @@ private:
     // physically de-energizes the motor, so there is no position left to remember - same reasoning as every other
     // RAM-only safety/state array in this class).
     mutable int relayPairPositionPercent[MAX_RELAY_SLOTS] = {0};
+    // RelayPair only - direction-reversal dead-time tracking, see RelayLogic's RelayPairState/computeRelayPairStep.
+    mutable RelayPairState relayPairStates[MAX_RELAY_SLOTS];
     // PID controller state, one per RelayFunctionType (indexed function-1) - only meaningful while that
     // function's FunctionControlConfig.controlMode is CONTROL_MODE_PID.
     PidState pidStates[MAX_REPORTED_FUNCTIONS];

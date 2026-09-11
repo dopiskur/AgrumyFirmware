@@ -167,22 +167,44 @@ int computeLatchingPulseAction(int previousPercent, int newPercent)
     return 0;
 }
 
-RelayPairDecision computeRelayPairStep(int currentPositionPercent, int targetPercent, int travelSeconds, int elapsedSeconds)
+RelayPairDecision computeRelayPairStep(RelayPairState &state, int currentPositionPercent, int targetPercent,
+                                        int travelSeconds, int deadTimeSeconds, int elapsedSeconds)
 {
     RelayPairDecision result;
     int clampedTarget = targetPercent < 0 ? 0 : (targetPercent > 100 ? 100 : targetPercent);
     int clampedCurrent = currentPositionPercent < 0 ? 0 : (currentPositionPercent > 100 ? 100 : currentPositionPercent);
-    if (travelSeconds <= 0 || elapsedSeconds <= 0 || clampedCurrent == clampedTarget)
+    result.newPositionPercent = clampedCurrent;
+
+    if (elapsedSeconds > 0 && state.deadTimeRemainingSeconds > 0)
     {
-        result.newPositionPercent = clampedCurrent;
+        state.deadTimeRemainingSeconds -= elapsedSeconds;
+        if (state.deadTimeRemainingSeconds < 0)
+        {
+            state.deadTimeRemainingSeconds = 0;
+        }
+    }
+    if (travelSeconds <= 0 || elapsedSeconds <= 0 || clampedCurrent == clampedTarget || state.deadTimeRemainingSeconds > 0)
+    {
+        return result; // holding: no travel configured, first tick for this slot, already at target, or still serving a reversal's dead time
+    }
+
+    int desiredDirection = clampedTarget > clampedCurrent ? RELAY_PAIR_DIRECTION_OPEN : RELAY_PAIR_DIRECTION_CLOSE;
+    if (deadTimeSeconds > 0 && state.lastDirection != RELAY_PAIR_DIRECTION_NONE && desiredDirection != state.lastDirection)
+    {
+        // Direction reversal - stop this tick and start the mandatory pause instead of flipping the motor straight
+        // through. lastDirection is updated to the new intended direction right away (not only once driving
+        // resumes) so this branch fires exactly once per reversal, not on every tick still waiting out the pause.
+        state.lastDirection = desiredDirection;
+        state.deadTimeRemainingSeconds = deadTimeSeconds;
         return result;
     }
+
     int stepPercent = elapsedSeconds * 100 / travelSeconds;
     if (stepPercent < 1)
     {
         stepPercent = 1; // guarantee forward progress even when a long travelSeconds/short tick would otherwise round to a stall
     }
-    if (clampedTarget > clampedCurrent)
+    if (desiredDirection == RELAY_PAIR_DIRECTION_OPEN)
     {
         result.openRelayOn = true;
         int next = clampedCurrent + stepPercent;
@@ -194,6 +216,7 @@ RelayPairDecision computeRelayPairStep(int currentPositionPercent, int targetPer
         int next = clampedCurrent - stepPercent;
         result.newPositionPercent = next < clampedTarget ? clampedTarget : next;
     }
+    state.lastDirection = desiredDirection;
     return result;
 }
 

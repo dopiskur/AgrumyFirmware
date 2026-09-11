@@ -137,7 +137,29 @@ struct RelayPairDecision
     bool closeRelayOn = false;
     int newPositionPercent = 0;
 };
-RelayPairDecision computeRelayPairStep(int currentPositionPercent, int targetPercent, int travelSeconds, int elapsedSeconds);
+
+enum RelayPairDirection
+{
+    RELAY_PAIR_DIRECTION_NONE = 0,
+    RELAY_PAIR_DIRECTION_OPEN = 1,
+    RELAY_PAIR_DIRECTION_CLOSE = -1,
+};
+
+// Persists across ticks (one instance per RelayPair slot). lastDirection is the last direction actually DRIVEN -
+// it is never reset back to NONE just because the pair reached its target and stopped, so a reversal is still
+// detected even when the new target arrives ticks after motion already stopped.
+struct RelayPairState
+{
+    int lastDirection = RELAY_PAIR_DIRECTION_NONE;
+    // >0 while a just-detected reversal's mandatory pause is still running - neither relay drives during this window.
+    int deadTimeRemainingSeconds = 0;
+};
+
+// Same decision as above, but a direction reversal (open->close or close->open) first stops the pair for
+// deadTimeSeconds instead of flipping it straight through - protects the motor/mechanism from a direct load
+// reversal. deadTimeSeconds<=0 disables this entirely (immediate reversal, matching the original behavior).
+RelayPairDecision computeRelayPairStep(RelayPairState &state, int currentPositionPercent, int targetPercent,
+                                        int travelSeconds, int deadTimeSeconds, int elapsedSeconds);
 
 // PID controller state - integral/lastError persist across ticks (one instance per PID-controlled function/slot).
 struct PidState

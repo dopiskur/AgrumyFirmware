@@ -130,7 +130,8 @@ void test_LatchingPulse_ZeroToZero_NoPulse(void)
 
 void test_RelayPairStep_TargetAboveCurrent_DrivesOpen(void)
 {
-    RelayPairDecision d = computeRelayPairStep(0, 100, 10, 2); // 10s full travel, 2s elapsed -> 20% step
+    RelayPairState state;
+    RelayPairDecision d = computeRelayPairStep(state, 0, 100, 10, 0, 2); // 10s full travel, 2s elapsed -> 20% step
     TEST_ASSERT_TRUE(d.openRelayOn);
     TEST_ASSERT_FALSE(d.closeRelayOn);
     TEST_ASSERT_EQUAL_INT(20, d.newPositionPercent);
@@ -138,7 +139,8 @@ void test_RelayPairStep_TargetAboveCurrent_DrivesOpen(void)
 
 void test_RelayPairStep_TargetBelowCurrent_DrivesClose(void)
 {
-    RelayPairDecision d = computeRelayPairStep(100, 0, 10, 2);
+    RelayPairState state;
+    RelayPairDecision d = computeRelayPairStep(state, 100, 0, 10, 0, 2);
     TEST_ASSERT_FALSE(d.openRelayOn);
     TEST_ASSERT_TRUE(d.closeRelayOn);
     TEST_ASSERT_EQUAL_INT(80, d.newPositionPercent);
@@ -146,23 +148,86 @@ void test_RelayPairStep_TargetBelowCurrent_DrivesClose(void)
 
 void test_RelayPairStep_NeverDrivesBothRelaysAtOnce(void)
 {
-    RelayPairDecision d = computeRelayPairStep(50, 100, 10, 2);
+    RelayPairState state;
+    RelayPairDecision d = computeRelayPairStep(state, 50, 100, 10, 0, 2);
     TEST_ASSERT_FALSE(d.openRelayOn && d.closeRelayOn);
 }
 
 void test_RelayPairStep_StepClampsExactlyToTarget_DoesNotOvershoot(void)
 {
-    RelayPairDecision d = computeRelayPairStep(95, 100, 10, 2); // 20% step would overshoot past 100
+    RelayPairState state;
+    RelayPairDecision d = computeRelayPairStep(state, 95, 100, 10, 0, 2); // 20% step would overshoot past 100
     TEST_ASSERT_EQUAL_INT(100, d.newPositionPercent);
     TEST_ASSERT_TRUE(d.openRelayOn);
 }
 
 void test_RelayPairStep_AlreadyAtTarget_NoRelayDriven(void)
 {
-    RelayPairDecision d = computeRelayPairStep(50, 50, 10, 2);
+    RelayPairState state;
+    RelayPairDecision d = computeRelayPairStep(state, 50, 50, 10, 0, 2);
     TEST_ASSERT_FALSE(d.openRelayOn);
     TEST_ASSERT_FALSE(d.closeRelayOn);
     TEST_ASSERT_EQUAL_INT(50, d.newPositionPercent);
+}
+
+// ---- computeRelayPairStep dead-time on direction reversal --------------------------------------------------
+
+void test_RelayPairStep_DeadTimeDisabled_ReversesImmediately(void)
+{
+    RelayPairState state;
+    RelayPairDecision opening = computeRelayPairStep(state, 0, 100, 10, 0, 2);
+    TEST_ASSERT_TRUE(opening.openRelayOn);
+    // Target flips the very next tick - deadTimeSeconds 0 means no pause, same as the pre-dead-time behavior.
+    RelayPairDecision closing = computeRelayPairStep(state, opening.newPositionPercent, 0, 10, 0, 2);
+    TEST_ASSERT_TRUE(closing.closeRelayOn);
+}
+
+void test_RelayPairStep_DirectionReversal_StopsInsteadOfFlipping(void)
+{
+    RelayPairState state;
+    RelayPairDecision opening = computeRelayPairStep(state, 0, 100, 10, 5, 2); // driving open, deadTimeSeconds=5
+    TEST_ASSERT_TRUE(opening.openRelayOn);
+    int positionAfterOpen = opening.newPositionPercent;
+
+    // Target reverses to fully closed - must stop (neither relay on) and hold position, not immediately close.
+    RelayPairDecision reversal = computeRelayPairStep(state, positionAfterOpen, 0, 10, 5, 2);
+    TEST_ASSERT_FALSE(reversal.openRelayOn);
+    TEST_ASSERT_FALSE(reversal.closeRelayOn);
+    TEST_ASSERT_EQUAL_INT(positionAfterOpen, reversal.newPositionPercent);
+}
+
+void test_RelayPairStep_DirectionReversal_DrivesNewDirectionOnceDeadTimeElapses(void)
+{
+    RelayPairState state;
+    RelayPairDecision opening = computeRelayPairStep(state, 0, 100, 10, 5, 2); // driving open
+    int positionAfterOpen = opening.newPositionPercent;
+    computeRelayPairStep(state, positionAfterOpen, 0, 10, 5, 2); // reversal detected, 5s dead time starts
+
+    RelayPairDecision stillWaiting = computeRelayPairStep(state, positionAfterOpen, 0, 10, 5, 3); // 3s of 5s elapsed
+    TEST_ASSERT_FALSE(stillWaiting.openRelayOn);
+    TEST_ASSERT_FALSE(stillWaiting.closeRelayOn);
+
+    RelayPairDecision closing = computeRelayPairStep(state, positionAfterOpen, 0, 10, 5, 2); // 5s total elapsed - dead time served
+    TEST_ASSERT_TRUE(closing.closeRelayOn);
+    TEST_ASSERT_TRUE(closing.newPositionPercent < positionAfterOpen);
+}
+
+void test_RelayPairStep_SameDirectionContinuation_NoDeadTimePause(void)
+{
+    RelayPairState state;
+    RelayPairDecision first = computeRelayPairStep(state, 0, 100, 10, 5, 2);
+    TEST_ASSERT_TRUE(first.openRelayOn);
+    // Still heading toward the same (higher) target - not a reversal, must keep driving open with no pause.
+    RelayPairDecision second = computeRelayPairStep(state, first.newPositionPercent, 100, 10, 5, 2);
+    TEST_ASSERT_TRUE(second.openRelayOn);
+    TEST_ASSERT_FALSE(second.closeRelayOn);
+}
+
+void test_RelayPairStep_FirstMoveFromRest_NoDeadTimePause(void)
+{
+    RelayPairState state; // lastDirection starts as NONE - the very first move is never a "reversal"
+    RelayPairDecision d = computeRelayPairStep(state, 50, 0, 10, 5, 2);
+    TEST_ASSERT_TRUE(d.closeRelayOn);
 }
 
 // ---- pidCompute ------------------------------------------------------------------------------------------
@@ -247,6 +312,11 @@ int main(int argc, char **argv)
     RUN_TEST(test_RelayPairStep_NeverDrivesBothRelaysAtOnce);
     RUN_TEST(test_RelayPairStep_StepClampsExactlyToTarget_DoesNotOvershoot);
     RUN_TEST(test_RelayPairStep_AlreadyAtTarget_NoRelayDriven);
+    RUN_TEST(test_RelayPairStep_DeadTimeDisabled_ReversesImmediately);
+    RUN_TEST(test_RelayPairStep_DirectionReversal_StopsInsteadOfFlipping);
+    RUN_TEST(test_RelayPairStep_DirectionReversal_DrivesNewDirectionOnceDeadTimeElapses);
+    RUN_TEST(test_RelayPairStep_SameDirectionContinuation_NoDeadTimePause);
+    RUN_TEST(test_RelayPairStep_FirstMoveFromRest_NoDeadTimePause);
     RUN_TEST(test_Pid_ProportionalOnly_OutputScalesWithError);
     RUN_TEST(test_Pid_OutputClampedToMax);
     RUN_TEST(test_Pid_OutputClampedToMin);

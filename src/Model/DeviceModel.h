@@ -276,6 +276,7 @@ struct RelaySlot
     int outputKind = OUTPUT_KIND_RELAY;
     int pairSlot = 0;                    // RelayPair/LatchingPulse only - the second physical relay slot (also indexes RELAY_PINS)
     int travelSeconds = 0;               // RelayPair only - full 0->100 traversal time; <=0 means "not moving" (see computeRelayPairStep)
+    int deadTimeSeconds = 0;             // RelayPair only - mandatory pause on a direction reversal; <=0 disables it (see computeRelayPairStep)
     int pwmFrequencyHz = 1000;           // Pwm only - LEDC frequency
     int servoMinPulseUs = 1000;
     int servoMaxPulseUs = 2000;

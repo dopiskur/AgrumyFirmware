@@ -275,6 +275,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
         relaySlot.outputKind = r["outputKind"] | OUTPUT_KIND_RELAY;
         relaySlot.pairSlot = r["pairSlot"] | 0;
         relaySlot.travelSeconds = r["travelSeconds"] | 0;
+        relaySlot.deadTimeSeconds = r["deadTimeSeconds"] | 0;
         relaySlot.pwmFrequencyHz = r["pwmFrequencyHz"] | 1000;
         relaySlot.servoMinPulseUs = r["servoMinPulseUs"] | 1000;
         relaySlot.servoMaxPulseUs = r["servoMaxPulseUs"] | 2000;
