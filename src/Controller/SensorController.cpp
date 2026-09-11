@@ -1357,6 +1357,11 @@ void SensorController::pushSensorData(const JsonDocument &payload){
 
 void SensorController::buildSensorData(const DeviceConfig& deviceConfig)
 {
+    // Was only set later, inside flushBufferedSensorData()/pushSensorData() at the end of this function - any
+    // event a sensor read below pushes (e.g. SensorMissing) went out with a blank apiId and got an unconditional
+    // 401, forcing a wasted re-auth + retry every single cycle a sensor reads as missing.
+    serviceRequest.header.apiId = deviceConfig.apiId;
+
     sensorData.battery=NAN;
     sensorData.temperature=NAN;
     sensorData.temperatureSoil=NAN;
