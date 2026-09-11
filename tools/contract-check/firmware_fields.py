@@ -6,13 +6,23 @@
 #     - src/Controller/DeviceController.cpp   registerDevice(), loadConfig()
 #     - src/Controller/ServiceController.cpp  apiAuthenticate(), apiConfig()
 #     - src/Controller/SensorController.cpp   buildSensorDataPayload()
+#     - src/Controller/ConfigParser.cpp       parseConfig() - the config/register
+#       response field reads (config[...], deviceConfigSensor[...],
+#       deviceConfigController[...]) now live here, not in DeviceController.cpp
 #
 #  check_contract.py validates the key sets below against the JSON Schemas in
 #  contracts/device-api/ (a copy of AgrumyService/contracts/device-api/ - see that
 #  folder's README for the source commit).
 #
-#  This is the stand-in until real firmware unit tests exist (roadmap #19); it
-#  does NOT parse the C++, it trusts the lists here to be kept in sync.
+#  verify_extraction.py cross-checks the "config.response.schema.json"/
+#  "register.response.schema.json" entries' keys (including "nested") below against
+#  what ConfigParser.cpp actually reads (grepped ["..."] string literals on the
+#  config/deviceConfigSensor/deviceConfigController JsonObject variables) - this is
+#  what catches a new field ConfigParser.cpp starts reading that never got added
+#  here - exactly the kind of drift this file had accumulated silently before.
+#  It does NOT replace this file or attempt real C++ parsing - a genuinely new
+#  container variable, or a key read through something other than a plain
+#  ["..."] subscript, still needs a human to notice and update both files.
 # =============================================================================
 
 # modes:
@@ -37,9 +47,12 @@ CONTRACT = {
 
     "config.request.schema.json": {
         "mode": "sends_exact",
-        "src": "ServiceController.cpp :: apiConfig()  ->  payload[...] (PascalCase; ConfigVersion "
-               "sent as string, the roadmap #7 heartbeat diagnostics as numbers/string)",
-        "keys": ["ConfigVersion", "Uptime", "Rssi", "FreeHeap", "FirmwareVersion", "Board", "Kit"],  # Board: roadmap #94, Kit: roadmap #149
+        "src": "ServiceController.cpp :: apiConfig()  ->  payload[...] (PascalCase; heartbeat "
+               "diagnostics as numbers/string) - only the fields schema.required actually demands; "
+               "ConfigSchemaVersion/Latitude/Longitude are also sent but stay optional (older "
+               "firmware or no GPS fix omits them), so sends_exact's required-set match doesn't "
+               "track them here.",
+        "keys": ["Uptime", "Rssi", "FreeHeap", "FirmwareVersion", "Board", "Kit"],
     },
 
     "sensordata.request.schema.json": {
@@ -54,8 +67,9 @@ CONTRACT = {
 
     "controllerdata.request.schema.json": {
         "mode": "sends_exact_array_item",
-        "src": "ServiceController.cpp :: pushControllerData()  ->  entry[...] (percent only for a positional function, so not in required)",
-        "keys": ["relayFunction", "isOn", "dateCreated"],
+        "src": "ServiceController.cpp :: pushControllerData()  ->  entry[...] (percent is the fold's "
+               "target percent for every function now, not just a positional one, so it's unconditional)",
+        "keys": ["relayFunction", "isOn", "percent", "dateCreated"],
     },
 
     "authenticate.response.schema.json": {
@@ -66,15 +80,16 @@ CONTRACT = {
 
     "config.response.schema.json": {
         "mode": "reads_subset",
-        "src": "DeviceController.cpp :: loadConfig()  ->  config[...]  (firmware ignores idDeviceConfig* fields)",
+        "src": "DeviceController.cpp :: loadConfig() -> ConfigParser::parse() -> config[...]  (firmware ignores idDeviceConfig* fields)",
         "keys": [
-            "servicePoint", "servicePublicKey", "apiId", "apiKey",
+            "servicePoint", "servicePublicKey", "apiId", "apiKey", "schemaVersion",
             "configVersion", "tenantID", "deviceID", "deviceFarmUnitID", "deviceFarmUnitZoneID",
-            "deviceTypeServiceID", "sleepSeconds", "sleepDeep", "utcOffsetSeconds",  # roadmap #39
+            "deviceTypeServiceID", "sleepSeconds", "sleepDeep", "loRaGatewayEnabled",
+            "utcOffsetSeconds", "serverUtcEpoch",
             "deviceSensorEnabled", "deviceControllerEnabled", "batteryEnabled", "enabled",
-            "debug", "reset",
-            "firmwareUpdate", "firmwareVersion", "firmwareUrl", "firmwareSha256",  # roadmap #3 (OTA) / #131
-            "pendingCommand",  # roadmap #34
+            "debug", "reset", "emergencyStop",
+            "firmwareUpdate", "firmwareVersion", "firmwareUrl", "firmwareSha256",
+            "pendingCommand",
             "deviceConfigSensor", "deviceConfigController",
         ],
         "nested": {
@@ -85,9 +100,12 @@ CONTRACT = {
             "deviceConfigSensor": {
                 "def": "deviceConfigSensor",
                 "keys": [
-                    "sensorBattery", "sensorTemp", "sensorTempSoil", "sensorHumid", "sensorMoist",
+                    "sensorBattery", "batteryDividerR1", "batteryDividerR2",
+                    "sensorTemp", "sensorTempSoil", "sensorHumid", "sensorMoist",
                     "sensorLight", "sensorCo2", "sensorTvoc", "sensorBarometer", "sensorPH",
                     "sensorRainLevel", "sensorWaterLevel", "sensorWind",
+                    "sensorEc", "ecCalibrationSlope", "ecCalibrationOffset",
+                    "sensorWeight", "weightCalibrationFactor", "weightTareOffset",
                 ],
             },
             "deviceConfigController": {
@@ -96,14 +114,22 @@ CONTRACT = {
                 # "rules" array (ConfigParser.cpp reads deviceConfigController["rules"], each
                 # entry's relayFunction/conditionType/conditionConfig - see ActuatorController for
                 # the per-conditionType conditionConfig shape, not re-validated at this flat level).
+                # relays[]/functionControl[]/manualOverrides[] entries are the same story - each
+                # item's own fields (slot/outputKind/pairSlot/.../controlMode/pidKp/.../mode/
+                # targetMetric/...) live in ConfigParser.cpp but aren't re-validated at this flat
+                # level, only that the container key itself is present.
                 # idDeviceConfigController excluded, same as idDeviceConfigSensor/idDeviceConfig*
                 # elsewhere in this file - firmware ignores it.
                 "keys": [
                     "rules",
-                    "waterPumpMaxRunSeconds", "waterPumpCooldownSeconds",
+                    "waterPumpMaxRunSeconds", "waterPumpCooldownSeconds", "waterPumpMinLevel",
+                    "waterLevelRawEmpty", "waterLevelRawFull",
                     "relayEnabled",
-                    "relays",  # roadmap #309: each entry's slot/relayFunction - see ConfigParser.cpp, not re-validated at this flat level (same as rules)
+                    "relays",
                     "skipWaterPumpForRain",
+                    "heatingFailSafePolicy",
+                    "manualOverrides",
+                    "functionControl",
                 ],
             },
         },

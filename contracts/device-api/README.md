@@ -3,7 +3,7 @@
 These JSON Schema files are a **copy** of the source-of-truth in the API repo:
 
 > **Source:** `dopiskur/AgrumyService`, path `contracts/device-api/`
-> **Copied from commit:** `dd7deac` (`master`) - synced by tools/contract-check/sync_schemas.py
+> **Copied from commit:** `93480c2` (`master`) - synced by tools/contract-check/sync_schemas.py
 
 Upstream, every file except `authenticate.request.schema.json` is generated from the C#
 DTOs by `tools/Agrumy.ContractGen` (see that repo's `contracts/device-api/README.md`), so a

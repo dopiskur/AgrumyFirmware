@@ -293,7 +293,8 @@
         "heatingFailSafePolicy",
         "manualOverrides",
         "relayEnabled",
-        "relays"
+        "relays",
+        "functionControl"
       ],
       "properties": {
         "idDeviceConfigController": {
@@ -350,6 +351,12 @@
             "$ref": "#/definitions/deviceRelaySlot"
           },
           "description": "Roadmap #309. One entry per physically-wired relay slot with a function assigned - a slot with no entry is unassigned/disabled. Replaces the old fixed relay1..relay8 keys, removing the hardcoded 8-slot ceiling from the wire format itself (AgrumyFirmware's own MAX_RELAY_SLOTS still caps how many a given firmware build can hold)."
+        },
+        "functionControl": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/deviceFunctionControl"
+          }
         }
       }
     },
@@ -363,6 +370,8 @@
         "deviceFarmID",
         "deviceFarmUnitID",
         "deviceFarmUnitZoneID",
+        "deviceFarmOpenfieldCropID",
+        "deviceFarmOpenfieldCropParcelID",
         "simulationSessionID",
         "experimentID",
         "actionType",
@@ -394,6 +403,12 @@
         "deviceFarmUnitZoneID": {
           "type": ["integer", "null"],
           "description": "Which zone this rule belongs to - redundant with the top-level deviceConfig.deviceFarmUnitZoneID (the device already knows its own zone). Never actually null on a rule that reached a device (a rule only reaches firmware after RuleHierarchyResolver has already pinned it to this specific zone), the type stays nullable here only because it mirrors the same always-present-class as the Unit/Global-scope rows the admin-API CRUD side also serializes with this definition."
+        },
+        "deviceFarmOpenfieldCropID": {
+          "type": ["integer", "null"]
+        },
+        "deviceFarmOpenfieldCropParcelID": {
+          "type": ["integer", "null"]
         },
         "simulationSessionID": {
           "type": ["integer", "null"],
@@ -432,7 +447,7 @@
         },
         "targetPercent": {
           "type": ["integer", "null"],
-          "description": "Only meaningful when relayFunction is positional (Screen=5/Vent=6) - the 0-100 position this rule commands while root evaluates true; several simultaneously-true rules for the same function fold to the HIGHEST targetPercent among them, not on/off OR. Null for every other function."
+          "description": "Required for every Relay rule regardless of function (roadmap #470) - the 0-100 demand this rule asserts while root evaluates true; several simultaneously-true rules for the same function fold to the HIGHEST targetPercent among them."
         },
         "isSafetyRule": {
           "type": "boolean",
@@ -609,7 +624,22 @@
       "type": "object",
       "additionalProperties": false,
       "description": "Roadmap #309. camelCase serialization of api.Models.DeviceRelaySlot - one physically-wired relay position and the function assigned to it.",
-      "required": ["slot", "relayFunction"],
+      "required": [
+        "slot",
+        "relayFunction",
+        "outputKind",
+        "pairSlot",
+        "travelSeconds",
+        "pwmFrequencyHz",
+        "servoMinPulseUs",
+        "servoMaxPulseUs",
+        "servoSafePositionPercent",
+        "latchingPulseMs",
+        "rateLimitPercentPerSecond",
+        "minOnSeconds",
+        "minOffSeconds",
+        "timeProportioningPeriodSeconds"
+      ],
       "properties": {
         "slot": {
           "type": "integer",
@@ -618,6 +648,82 @@
         "relayFunction": {
           "type": "integer",
           "description": "1=Ventilation, 2=Light, 3=Heating, 4=WaterPump (api.Models.RelayFunction) - never 0/Disabled, a disabled slot is simply omitted from the relays array rather than sent with this value."
+        },
+        "outputKind": {
+          "type": "integer"
+        },
+        "pairSlot": {
+          "type": ["integer", "null"]
+        },
+        "travelSeconds": {
+          "type": ["integer", "null"]
+        },
+        "pwmFrequencyHz": {
+          "type": ["integer", "null"]
+        },
+        "servoMinPulseUs": {
+          "type": ["integer", "null"]
+        },
+        "servoMaxPulseUs": {
+          "type": ["integer", "null"]
+        },
+        "servoSafePositionPercent": {
+          "type": ["integer", "null"]
+        },
+        "latchingPulseMs": {
+          "type": ["integer", "null"]
+        },
+        "rateLimitPercentPerSecond": {
+          "type": ["integer", "null"]
+        },
+        "minOnSeconds": {
+          "type": ["integer", "null"]
+        },
+        "minOffSeconds": {
+          "type": ["integer", "null"]
+        },
+        "timeProportioningPeriodSeconds": {
+          "type": ["integer", "null"]
+        }
+      }
+    },
+    "deviceFunctionControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relayFunction",
+        "controlMode",
+        "pidSetpointMetric",
+        "pidSetpoint",
+        "pidKp",
+        "pidKi",
+        "pidKd",
+        "pidSampleIntervalSeconds"
+      ],
+      "properties": {
+        "relayFunction": {
+          "type": "integer"
+        },
+        "controlMode": {
+          "type": "integer"
+        },
+        "pidSetpointMetric": {
+          "type": ["integer", "null"]
+        },
+        "pidSetpoint": {
+          "type": ["number", "null"]
+        },
+        "pidKp": {
+          "type": ["number", "null"]
+        },
+        "pidKi": {
+          "type": ["number", "null"]
+        },
+        "pidKd": {
+          "type": ["number", "null"]
+        },
+        "pidSampleIntervalSeconds": {
+          "type": ["number", "null"]
         }
       }
     },

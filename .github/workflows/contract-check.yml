@@ -3,7 +3,9 @@ name: Contract check
 # Validates the hand-maintained firmware field lists in tools/contract-check/
 # against the JSON Schemas in contracts/device-api/ - first the committed copy,
 # then a fresh download of AgrumyService master's generated files, so an API-side
-# DTO change surfaces here before anyone re-syncs the copy.
+# DTO change surfaces here before anyone re-syncs the copy. Also cross-checks the
+# same field lists against what ConfigParser.cpp actually reads off the wire, so a
+# firmware-side field addition surfaces here too, not just an API-side one.
 #
 # Kept as its own workflow (separate from the PlatformIO build) so it stays
 # fast and does not conflict-merge with build.yml.
@@ -24,6 +26,8 @@ jobs:
         with:
           python-version: '3.x'
       - run: pip install -r tools/contract-check/requirements.txt
+      - name: firmware_fields.py vs ConfigParser.cpp extraction
+        run: python tools/contract-check/verify_extraction.py
       - name: Committed schema copy
         run: python tools/contract-check/check_contract.py
       - name: Download AgrumyService master schemas
