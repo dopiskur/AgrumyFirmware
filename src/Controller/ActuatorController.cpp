@@ -99,13 +99,20 @@ void ActuatorController::dispatchSlot(int slotIndex, const RelaySlot &slot, int 
             return; // this board has no physical pin at this slot - a misconfigured server assignment, not a real relay
         }
         bool previousOn = lastAppliedPercent[slotIndex] > 0;
-        bool wantsOn = rawTargetPercent > 0;
+        // timeProportioningPeriodSeconds>0 turns a plain on/off relay into a proportional "average power" output (e.g. a resistive heating element with no PWM/SSR input) instead of the raw >0 on/off decision.
+        bool wantsOn = slot.timeProportioningPeriodSeconds > 0
+            ? computeTimeProportioningState(rawTargetPercent, slot.timeProportioningPeriodSeconds, epochSeconds)
+            : rawTargetPercent > 0;
         // Min-on/off protects a compressor/pump from short-cycling - cooldownActive already exists (WaterPump's own dedicated min-off check), minOnTimeBlocksOff is its mirror for the min-on direction.
         bool blockedOn = wantsOn && !previousOn && cooldownActive(epochSeconds, slotOffSinceEpoch[slotIndex], slot.minOffSeconds);
         bool blockedOff = !wantsOn && previousOn && minOnTimeBlocksOff(epochSeconds, slotOnSinceEpoch[slotIndex], slot.minOnSeconds);
         bool finalOn = blockedOn ? false : (blockedOff ? true : wantsOn);
-        relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
-        relayWrite(pin, finalOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        // Skip the I2C round trip once the shadow already matches - only the very first dispatch (lastEpoch==0) or a genuine state change writes the bus.
+        if (lastEpoch == 0 || finalOn != previousOn)
+        {
+            relayPinMode(pin, i2cAddr, i2cSda, i2cScl);
+            relayWrite(pin, finalOn, i2cAddr, i2cSda, i2cScl, activeLow);
+        }
         appliedPercent = finalOn ? 100 : 0;
         break;
     }
@@ -720,8 +727,12 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
             // Reverse-acting: this function wants to DECREASE the reading (e.g. Ventilation used for cooling) - without
             // it, error = setpoint - reading is permanently negative once reading exceeds setpoint and clamps to 0.
             bool pidReverseActing = (function == RelayFunctionType::Ventilation);
+            // Real elapsed seconds since this function's last PID tick, not the configured sample interval - falls back to it on the very first compute (lastPidComputeEpoch==0), when no real elapsed time exists yet.
+            time_t lastPidEpoch = lastPidComputeEpoch[idx];
+            double pidDt = lastPidEpoch == 0 ? (double)control.pidSampleIntervalSeconds : (double)(epochSeconds - lastPidEpoch);
+            lastPidComputeEpoch[idx] = epochSeconds;
             targetPercent = isnan(reading) ? 0 // no reading this cycle - fail closed, same convention evaluateCondition already uses for a missing/stale sensor
-                                            : pidCompute(pidStates[idx], control.pidSetpoint, reading, control.pidKp, control.pidKi, control.pidKd, control.pidSampleIntervalSeconds, 0, 100, pidReverseActing);
+                                            : pidCompute(pidStates[idx], control.pidSetpoint, reading, control.pidKp, control.pidKi, control.pidKd, pidDt, 0, 100, pidReverseActing);
         }
         else
         {

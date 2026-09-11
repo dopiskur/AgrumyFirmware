@@ -168,6 +168,8 @@ private:
     // PID controller state, one per RelayFunctionType (indexed function-1) - only meaningful while that
     // function's FunctionControlConfig.controlMode is CONTROL_MODE_PID.
     PidState pidStates[MAX_REPORTED_FUNCTIONS];
+    // Epoch of this function's last PID compute (0 = never) - lets pidCompute use the REAL elapsed dt instead of the configured pidSampleIntervalSeconds.
+    time_t lastPidComputeEpoch[MAX_REPORTED_FUNCTIONS] = {0};
     String pendingSafetyEventMessage = "";
     mutable String pendingHardwareFaultMessage = "";
     mutable String pendingSensorStaleMessage = "";
