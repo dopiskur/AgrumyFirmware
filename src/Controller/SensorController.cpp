@@ -569,18 +569,19 @@ void SensorController::sensor_DHT11_humid()
 
 void SensorController::sensor_DHT22_temp()
 {
-    delay(500);
+    // vTaskDelay, not delay() - this runs on every sensor-read cycle, and a plain delay() blocks the whole core (missed relay ticks/watchdog feeds on a shared core) for no benefit over yielding to the scheduler.
+    vTaskDelay(pdMS_TO_TICKS(500));
     dht22.begin();
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     sensors_event_t event;
     dht22.temperature().getEvent(&event);
     reportDHTTemperature(event, "DHT22");
 }
 void SensorController::sensor_DHT22_humid()
 {
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     dht22.begin();
-    delay(500);
+    vTaskDelay(pdMS_TO_TICKS(500));
     sensors_event_t event;
     dht22.humidity().getEvent(&event);
     reportDHTHumidity(event, "DHT22");
