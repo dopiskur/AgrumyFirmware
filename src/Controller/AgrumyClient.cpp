@@ -184,7 +184,9 @@ ServiceData AgrumyClient::requestPostSync(const JsonDocument& jsonBuffer, Servic
     ServiceData serviceData;
     String jsonRequest;
 
-    serializeJsonPretty(jsonBuffer, jsonRequest);
+    // Compact, not pretty - this string is the actual wire payload (http.POST(jsonRequest) below), never logged,
+    // so indentation/newlines only cost extra bytes over the air and extra peak heap right before the TLS handshake.
+    serializeJson(jsonBuffer, jsonRequest);
 
     if ((WiFi.status() == WL_CONNECTED))
     {

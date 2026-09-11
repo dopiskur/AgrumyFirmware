@@ -103,7 +103,13 @@ static SensirionI2cScd4x scd4x;
 static MHZ19 mhz19(&Serial2); // Stream* is a constructor argument, not a begin() parameter - same reason DS18B20's OneWire is constructed at setupSensor() time, but Serial2 is a fixed global so this can happen at static-init instead
 static I2CSoilMoistureSensor chirpSoilMoisture;
 static Ezo_board ezoPh(99, "PH");
-static PhSensor anyleafPh;
+// Lazily constructed (only when actually configured), same pattern as Max31855/Max31856/Max31865 below - PhSensor's
+// OWN constructor unconditionally calls Wire.begin(ADC_ADDR_1), a single-argument call that resolves to TwoWire's
+// SLAVE-mode overload (see esp32-hal Wire.h: begin(uint8_t addr) -> begin(addr, -1, -1, 0)). A plain `static
+// PhSensor anyleafPh;` file-scope object runs that constructor during C++ static init, before setup() and
+// regardless of whether AnyleafPh is the configured pH sensor - wedging the I2C bus into slave mode for the
+// device's whole uptime and breaking every other I2C sensor with it (the "Bus is in Slave Mode" cascade).
+static PhSensor *anyleafPh = nullptr;
 static Adafruit_ADS1115 ads1115;
 static Adafruit_TSL2561_Unified tsl2561(TSL2561_ADDR_FLOAT, 12345);
 static Adafruit_TSL2591 tsl2591(12346);
@@ -250,6 +256,7 @@ void SensorController::setupSensor()
     }
     if (deviceConfig.configSensor.sensorPH == SensorTypeIds::AnyleafPh)
     {
+        anyleafPh = new PhSensor();
         anyleafPhStatus = true;
     }
     if (deviceConfig.configSensor.sensorEc == SensorTypeIds::Ads1115Ec)
@@ -957,7 +964,7 @@ void SensorController::sensor_AnyleafPH_ph()
 {
     Serial.println("[Sensor] Anyleaf pH");
     if (!anyleafPhStatus) { reportSensorInitError("AnyleafPH"); return; }
-    float ph = anyleafPh.read();
+    float ph = anyleafPh->read();
     Serial.println(ph);
     sensorData.liquidPH = ph;
 }
@@ -1207,13 +1214,17 @@ void SensorController::buildSensorDataPayload()
     // Additive channel alongside the HTTPS buffer above - best-effort, never buffered/retried.
     mqtt.publishSensorData(deviceConfig, jsonSensorData);
 
-    String sensorDataDebug;
-    serializeJsonPretty(jsonSensorData,sensorDataDebug);
+    {
+        // Scoped and freed before pushSensorData() below - sensorDataDebug is pure debug output, but as a local
+        // in this same function it would otherwise sit in memory through pushSensorData()'s entire call chain,
+        // TLS handshake included.
+        String sensorDataDebug;
+        serializeJsonPretty(jsonSensorData, sensorDataDebug);
+        Serial.println("[Sensor] Buffered sensorData:");
+        Serial.println(sensorDataDebug);
+    }
 
-    Serial.println("[Sensor] Buffered sensorData:");
-    Serial.println(sensorDataDebug);
-
-    pushSensorData(sensorDataJsonArray); 
+    pushSensorData(sensorDataJsonArray);
 }
 
 // One full RAM buffer's worth per file (~400 bytes/reading, so this spills roughly every 20 failed cycles; ~170 files fit under the 70% partition cap).
@@ -1235,7 +1246,9 @@ bool SensorController::flushBufferedSensorData()
         String payloadJson = device.loadFile(filename);
 
         JsonDocument payload;
-        if (payloadJson.isEmpty() || deserializeJson(payload, payloadJson) != DeserializationError::Ok)
+        bool parsed = !payloadJson.isEmpty() && deserializeJson(payload, payloadJson) == DeserializationError::Ok;
+        payloadJson = ""; // freed now, not needed past this point - the TLS handshake right below needs its own large contiguous allocation and this file-sized buffer would otherwise still be sitting in heap fragmenting it
+        if (!parsed)
         {
             // A poison entry would wedge the whole queue forever - drop it, keep draining.
             Serial.println("[Sensor] Buffered file /" + filename + " unreadable - dropping it");
@@ -1270,7 +1283,11 @@ bool SensorController::flushBufferedSensorData()
     return true;
 }
 
-void SensorController::pushSensorData(JsonDocument payload){
+// payload is only ever read here (passed straight through to requestPost, itself a const-ref parameter) - was
+// previously taken by value, which meant ArduinoJson v7's JsonDocument copy constructor (a real deep copy, not
+// copy-on-write) duplicated the whole sensorDataJsonArray on every call, right before the TLS handshake that
+// needs its own large contiguous allocation. Worse the longer sends keep failing, since the array only grows.
+void SensorController::pushSensorData(const JsonDocument &payload){
 
     serviceRequest.endpoint = serviceEndpoint.apiSensorDataPost;
     serviceRequest.header.apiId = deviceConfig.apiId;
