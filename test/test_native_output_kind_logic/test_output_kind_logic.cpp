@@ -283,6 +283,32 @@ void test_Pid_AntiWindup_SaturatedIntegralDoesNotOvershootOnceErrorShrinks(void)
     TEST_ASSERT_TRUE(output >= 0);
 }
 
+void test_Pid_ReverseActing_OutputRisesAboveSetpoint(void)
+{
+    PidState state;
+    // Direct-acting (default) would clamp to 0 here (error = setpoint - reading = -5); reverse-acting wants MORE
+    // output as reading climbs above setpoint (e.g. Ventilation used for cooling).
+    int output = pidCompute(state, /*setpoint*/ 25.0, /*reading*/ 30.0, /*kp*/ 10.0, 0.0, 0.0, 1.0, 0, 100, /*reverseActing*/ true);
+    TEST_ASSERT_EQUAL_INT(50, output); // error (reading-setpoint) 5 * kp 10 = 50
+}
+
+void test_Pid_ReverseActing_BelowSetpoint_ClampsToZero(void)
+{
+    PidState state;
+    int output = pidCompute(state, 25.0, 20.0, 10.0, 0.0, 0.0, 1.0, 0, 100, true);
+    TEST_ASSERT_EQUAL_INT(0, output); // error (reading-setpoint) -5 clamps to outputMin
+}
+
+void test_Pid_DerivativeOnMeasurement_SetpointChangeAloneDoesNotSpike(void)
+{
+    PidState state;
+    pidCompute(state, 25.0, 25.0, 0.0, 0.0, 1000.0, 1.0, 0, 100); // reading settled at setpoint, seeds lastReading
+    // Setpoint jumps 25 -> 40 with the reading unchanged - derivative-on-error would spike off that jump (derivative
+    // kick); derivative-on-measurement must not react at all since the MEASUREMENT itself did not move.
+    int output = pidCompute(state, 40.0, 25.0, 0.0, 0.0, 1000.0, 1.0, 0, 100);
+    TEST_ASSERT_EQUAL_INT(0, output);
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
@@ -323,5 +349,8 @@ int main(int argc, char **argv)
     RUN_TEST(test_Pid_IntegralAccumulatesAcrossTicks);
     RUN_TEST(test_Pid_FirstTick_NoDerivativeSpike);
     RUN_TEST(test_Pid_AntiWindup_SaturatedIntegralDoesNotOvershootOnceErrorShrinks);
+    RUN_TEST(test_Pid_ReverseActing_OutputRisesAboveSetpoint);
+    RUN_TEST(test_Pid_ReverseActing_BelowSetpoint_ClampsToZero);
+    RUN_TEST(test_Pid_DerivativeOnMeasurement_SetpointChangeAloneDoesNotSpike);
     return UNITY_END();
 }

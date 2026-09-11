@@ -717,8 +717,11 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         {
             // PID bypasses the rule fold entirely for this function - see FunctionControlConfig's own remarks.
             double reading = readingForTargetMetric(control.pidSetpointMetric, sensorData);
+            // Reverse-acting: this function wants to DECREASE the reading (e.g. Ventilation used for cooling) - without
+            // it, error = setpoint - reading is permanently negative once reading exceeds setpoint and clamps to 0.
+            bool pidReverseActing = (function == RelayFunctionType::Ventilation);
             targetPercent = isnan(reading) ? 0 // no reading this cycle - fail closed, same convention evaluateCondition already uses for a missing/stale sensor
-                                            : pidCompute(pidStates[idx], control.pidSetpoint, reading, control.pidKp, control.pidKi, control.pidKd, control.pidSampleIntervalSeconds, 0, 100);
+                                            : pidCompute(pidStates[idx], control.pidSetpoint, reading, control.pidKp, control.pidKi, control.pidKd, control.pidSampleIntervalSeconds, 0, 100, pidReverseActing);
         }
         else
         {

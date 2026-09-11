@@ -220,9 +220,9 @@ RelayPairDecision computeRelayPairStep(RelayPairState &state, int currentPositio
     return result;
 }
 
-int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax)
+int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax, bool reverseActing)
 {
-    double error = setpoint - reading;
+    double error = reverseActing ? (reading - setpoint) : (setpoint - reading);
     double integralCandidate = state.integral + error * (sampleIntervalSeconds > 0 ? sampleIntervalSeconds : 0.0);
     double iTermCandidate = ki * integralCandidate;
     // Clamp the CANDIDATE integral pre-emptively (anti-windup) - an already-saturated output must not keep
@@ -237,9 +237,10 @@ int pidCompute(PidState &state, double setpoint, double reading, double kp, doub
     }
     state.integral = integralCandidate;
 
-    double derivative = (state.hasLastError && sampleIntervalSeconds > 0) ? (error - state.lastError) / sampleIntervalSeconds : 0.0;
-    state.lastError = error;
-    state.hasLastError = true;
+    double measurementDelta = (state.hasLastReading && sampleIntervalSeconds > 0) ? (reading - state.lastReading) / sampleIntervalSeconds : 0.0;
+    double derivative = reverseActing ? measurementDelta : -measurementDelta;
+    state.lastReading = reading;
+    state.hasLastReading = true;
 
     double output = kp * error + ki * state.integral + kd * derivative;
     output = output > outputMax ? outputMax : (output < outputMin ? outputMin : output);

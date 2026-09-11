@@ -161,19 +161,23 @@ struct RelayPairState
 RelayPairDecision computeRelayPairStep(RelayPairState &state, int currentPositionPercent, int targetPercent,
                                         int travelSeconds, int deadTimeSeconds, int elapsedSeconds);
 
-// PID controller state - integral/lastError persist across ticks (one instance per PID-controlled function/slot).
+// PID controller state - integral/lastReading persist across ticks (one instance per PID-controlled function/slot).
 struct PidState
 {
     double integral = 0.0;
-    double lastError = 0.0;
-    bool hasLastError = false;
+    double lastReading = 0.0;
+    bool hasLastReading = false;
 };
 
-// Standard Kp/Ki/Kd PID against (setpoint - reading), clamped to [outputMin,outputMax] and returned as a 0-100-ish
-// percent (whatever range the caller passes). Anti-windup: the CANDIDATE integral is clamped before being folded
-// into state.integral, so an already-saturated output can't accumulate an integral term it can never use once the
-// reading finally catches up. hasLastError false (first call) skips the derivative term - no prior reading to diff
-// against yet, rather than spiking off an assumed-zero delta.
-int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax);
+// Standard Kp/Ki/Kd PID, clamped to [outputMin,outputMax] and returned as a 0-100-ish percent (whatever range the
+// caller passes). reverseActing false: error = setpoint - reading (output rises as reading falls below setpoint,
+// e.g. Heating); true: error = reading - setpoint (output rises as reading climbs above setpoint, e.g. Ventilation
+// used for cooling - without this a cooling function's error is permanently negative and clamps to outputMin,
+// so it never turns on). Derivative is on the MEASUREMENT, not the error, so a setpoint change alone can never
+// spike it (no "derivative kick"). Anti-windup: the CANDIDATE integral is clamped before being folded into
+// state.integral, so an already-saturated output can't accumulate an integral term it can never use once the
+// reading finally catches up. hasLastReading false (first call) skips the derivative term - no prior reading to
+// diff against yet, rather than spiking off an assumed-zero delta.
+int pidCompute(PidState &state, double setpoint, double reading, double kp, double ki, double kd, double sampleIntervalSeconds, int outputMin, int outputMax, bool reverseActing = false);
 
 #endif
