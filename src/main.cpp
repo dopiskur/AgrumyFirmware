@@ -374,6 +374,10 @@ void loop()
 #endif
 
   if (deviceConfig.enabled && !waitingForServer) {
+    // Drain any backlog from a previous failed cycle NOW, right after Config/Event - heap is still close to its
+    // post-boot high here, before the sensor-driver read pass below fragments it. pushSensorData() (inside
+    // buildSensorData()) still tries again at its own tail too, but by then it's usually a no-op scan.
+    sensor.flushBufferedSensorData();
     device.setLastPhase(PHASE_SENSOR_READ);
     sensor.buildSensorData(deviceConfig);
   } else {

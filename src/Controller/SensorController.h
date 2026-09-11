@@ -105,12 +105,15 @@ private:
     void reportPressure(double pascals);
     bool tryReadCCS811(); // available()+readData(), false on either miss or heat-up wait
 
-    // Drains /buffer oldest-first, deleting each file only after its own 2xx. Returns false if it broke off mid-queue (connection dropped again).
-    bool flushBufferedSensorData();
-
-
 public:
     void setupSensor();
+
+    // Drains /buffer oldest-first, deleting each file only after its own 2xx. Returns false if it broke off
+    // mid-queue (connection dropped again). Public so main.cpp's loop can drain any backlog from a previous
+    // failed cycle right after the Config poll - while heap is still relatively unfragmented - instead of only
+    // at the tail of pushSensorData(), after a whole cycle's sensor-driver churn has already eaten into it.
+    // pushSensorData() still calls this itself too (a no-op scan if this already drained everything).
+    bool flushBufferedSensorData();
 
     // On-demand I2C bus scan + driver-begin() disambiguation, independent of the device's current sensor config; returns a JSON string ({"Addresses":[{"Address":N,"Candidates":[sensorTypeId,...]}]}) for ServiceController to relay back via pushEvent.
     String detectSensors();
