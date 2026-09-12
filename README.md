@@ -22,8 +22,8 @@ Built with PlatformIO. Ten environments (plus `native`, host-only, see Tests bel
 | `heltec-v4` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V4, no official PlatformIO board yet - reuses V3's board id) + external GPS module | Controller - same job as `heltec-v3` plus GPS-based device location (TinyGPSPlus over UART, `Controller/GpsController`), reported as `Latitude`/`Longitude` in the config-poll heartbeat; V3-inherited pin mapping not verified against real V4 hardware |
 | `esp32-s3-relay-6ch` | ESP32-S3 (Waveshare ESP32-S3-Relay-6CH kit) | Controller - six relays on direct GPIO, not physically verified |
 | `esp32-lora` | ESP32-WROOM-32 + SX1276 (TTGO LoRa32 V2.1) | Profile B - no WiFi/HTTP, a separate setup()/loop() branch entirely, pin mapping and join/uplink cycle not verified against real hardware |
-| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; each boot derives its own AES-128-GCM session key (HKDF from a fresh random bootNonce) instead of persisting an uplink counter to flash, so replay protection survives power loss with zero flash writes per uplink; pin mapping + single-board cycle confirmed on real hardware, two-radio RF exchange not yet tested |
-| `esp32-lora-gateway-bridge` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | The LoRa private-protocol Gateway's own mains-powered radio-frontend board - bridges RadioLib frames to/from Agrumy.Gateway over USB serial; radio init + real serial link to Agrumy.Gateway confirmed on hardware, real over-the-air traffic not yet tested |
+| `esp32-lora-private` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | LoRa private-protocol sensor node (RadioLib raw PHY, no LoRaWAN/ChirpStack) - alternative to `esp32-lora`, paired with a Gateway running `GatewayProfile.LoRaPrivateProtocol`; each boot derives its own AES-128-GCM session key (HKDF from a fresh random bootNonce) instead of persisting an uplink counter to flash, so replay protection survives power loss with zero flash writes per uplink; a real two-board uplink (this node transmitting, `esp32-lora-gateway-bridge` receiving/decoding) is confirmed working over the air on hardware, downlink (Gateway -> bridge -> node) not yet exercised end to end |
+| `esp32-lora-gateway-bridge` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | The LoRa private-protocol Gateway's own mains-powered radio-frontend board - bridges RadioLib frames to/from Agrumy.Gateway over USB serial; a real two-board uplink is confirmed working over the air (this board receiving/decoding an `esp32-lora-private` node's reading and forwarding it), downlink not yet exercised end to end |
 | `heltec-lora-gateway` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | Standalone LoRa Gateway - a minimal WiFi-only device with no relays/sensors of its own, relaying nearby LoRa-only nodes' private-protocol uplinks over its own WiFi/HTTP connection (`LoRaGatewayRelayController`), no serial-attached bridge board or separate `Agrumy.Gateway` process needed |
 
 Sensor readings include a `Battery` percentage for devices running on
@@ -41,6 +41,24 @@ rule-driven state directly with a Manual Actuate command (duration-based, or
 until a target sensor value is reached) - `ManualOverride`/`ManualOverrideMode`
 in `Model/DeviceModel.h`, applied in `ActuatorController::findManualOverride`
 ahead of the normal rule evaluation.
+
+Six relay functions exist (Ventilation, Light, Heating, Water pump, Screen,
+Vent - the last two positional/percent-driven, e.g. a greenhouse screen or vent
+flap, rather than plain on/off); every function folds through the same 0-100
+`targetPercent`/MAX engine regardless of kind, so a positional function needs no
+separate code path. Each physically-wired output slot (`RelaySlot`) declares one
+of six `outputKind`s (`Model/DeviceModel.h`): plain Relay, RelayPair (two relays
+driving an open/close motor, with a configurable travel time and a mandatory
+dead-time pause on direction reversal), Pwm, Analog 0-10V (native ESP32 DAC,
+classic ESP32 only, not S3), Servo, or LatchingPulse (a brief pulse on a coil
+only on a 0/not-0 transition) - plus optional per-slot rate limiting and
+min-on/min-off timing, all applied in `RelayLogic.h`/`ActuatorController`. A
+relay function can also run in PID control mode instead of the ordinary
+Threshold rule fold - `RelayLogic::pidCompute` derives `targetPercent` from a
+setpoint/reading with configurable reverse-acting and derivative-on-measurement
+behavior, still subject to the same rate-limit/min-on-off/outputKind dispatch
+below it; a plain-Relay PID output can additionally time-proportion
+(`computeTimeProportioningState`) to turn a percent into an on/off duty cycle.
 
 ## Offline resilience
 
@@ -64,17 +82,23 @@ anyone remembers to resync.
 
 ## Tests
 
-Thirteen native suites (`test/test_native_*`) pull the platform-independent
+Twenty-five native suites (`test/test_native_*`) pull the platform-independent
 logic out into plain C++ (no `Arduino.h`, no `digitalWrite`/`analogRead`) so it
 can run as Unity tests on the host, without an ESP32 or any hardware attached:
-relay-decision math (interval/schedule/threshold, `RelayLogic.*`), the AND/OR
-condition fold (`RelayLogic::foldConditions`), battery-voltage/percentage
-conversion (`BatteryLogic.*`), safety limits, discovery logic, sleep-schedule
-logic, manual-override evaluation, and the LoRa-specific interval/payload/
-private-frame/serial-frame logic each LoRa environment needs. The threshold
-suite runs against `test/test_native_threshold_logic/threshold_vectors.csv`, a
-fixture shared verbatim with `AgrumyService`'s own test project so both repos
-agree on the same inputs/outputs for the same evaluator:
+relay-decision math (interval/schedule/threshold/comparison-operator,
+`RelayLogic.*`), the AND/OR condition fold (`RelayLogic::foldConditions`) and
+its rule-tree size limits, the outputKind dispatch primitives (rate limiting,
+min-on-time, time-proportioning, PWM/servo/analog output mapping, RelayPair
+motor step, PID controller) and the positional (Screen/Vent) percent fold,
+battery-voltage/percentage conversion (`BatteryLogic.*`), safety limits,
+discovery logic, sleep-schedule logic, manual-override evaluation, per-driver
+sensor warm-up timing, config parse/apply logic, command-replay/dedup logic,
+HTTP date parsing, network-request logic, and the LoRa-specific interval/
+payload/private-frame/private-session/serial-frame logic each LoRa environment
+needs. The threshold suite runs against
+`test/test_native_threshold_logic/threshold_vectors.csv`, a fixture shared
+verbatim with `AgrumyService`'s own test project so both repos agree on the
+same inputs/outputs for the same evaluator:
 
 ```
 pio test -e native
