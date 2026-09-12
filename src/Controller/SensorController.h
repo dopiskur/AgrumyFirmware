@@ -125,7 +125,7 @@ public:
     void buildSensorDataPayload();
     void pushSensorData(const JsonDocument &payload);
 
-    // Roadmap #133's local display reads the last cycle's readings through this instead of duplicating buildSensorData()'s own storage. loopTask-only (display.update() runs right after buildSensorData() on the same task) - not safe for the relay task, which must use relaySnapshotGet() instead.
+    // The local display reads the last cycle's readings through this instead of duplicating buildSensorData()'s own storage. loopTask-only (display.update() runs right after buildSensorData() on the same task) - not safe for the relay task, which must use relaySnapshotGet() instead.
     const SensorData &getSensorData() const { return sensorData; }
 
     // Thread-safe copy of the latest fully-populated sensor reading, for the relay task - see relaySensorDataSnapshot's own comment.

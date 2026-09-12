@@ -163,7 +163,7 @@ LoRaSensorReading LoRaController::readSensors()
 {
     LoRaSensorReading reading;
     // Minimal Profile B sensor set for now - battery only; a temperature/humidity sensor is the
-    // natural next addition once this profile has real hardware to validate against (roadmap #225).
+    // natural next addition once this profile has real hardware to validate against.
     int raw = analogRead(PIN_BATTERY_ADC);
     double measuredVolts = (raw / 4095.0) * 3.3;
     double batteryVolts = computeDividerBatteryVoltage(measuredVolts, BATTERY_DIVIDER_R1_OHMS, BATTERY_DIVIDER_R2_OHMS);

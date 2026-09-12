@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>
 #include "ConditionTree.h"
 
-// Roadmap #459 (EPIC A5) - pure, host-testable pieces of ConfigParser::parse(), split out so the
+// Pure, host-testable pieces of ConfigParser::parse(), split out so the
 // rule-tree cap/reject rules and the schema-version check have real native test coverage instead of
 // only being exercised implicitly through a device or the (Arduino-dependent, native-untestable)
 // ConfigParser.cpp itself.

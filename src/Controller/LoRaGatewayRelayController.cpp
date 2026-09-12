@@ -10,7 +10,7 @@
 
 namespace
 {
-    // Roadmap #395 finding 3 - frame.payload is now AES-256-GCM ciphertext (this controller stays "deliberately dumb", it never decrypts), and JSON strings must be valid UTF-8 text - base64 is how it crosses the RelayUplink HTTP/JSON boundary intact.
+    // frame.payload is now AES-256-GCM ciphertext (this controller stays "deliberately dumb", it never decrypts), and JSON strings must be valid UTF-8 text - base64 is how it crosses the RelayUplink HTTP/JSON boundary intact.
     String base64Encode(const std::string &data)
     {
         size_t outLen = 0;
@@ -57,7 +57,7 @@ namespace
     SX1262 loRaGatewayRadio = new Module(PIN_CS, PIN_DIO1, PIN_RST, PIN_BUSY);
 #endif
 
-    // Disk backlog goes first, oldest file first, so the server receives uplinks in chronological order (roadmap #396(7), same pattern as SensorController::flushBufferedSensorData) - a broken-off flush means the connection is down again, so the caller's own live send this cycle is left to fail and buffer normally rather than retried here.
+    // Disk backlog goes first, oldest file first, so the server receives uplinks in chronological order (same pattern as SensorController::flushBufferedSensorData) - a broken-off flush means the connection is down again, so the caller's own live send this cycle is left to fail and buffer normally rather than retried here.
     void flushBufferedRelayUplinks(ServiceController &service, ServiceRequest serviceRequest)
     {
         String filename = StorageController::oldestBufferedRelayFile();

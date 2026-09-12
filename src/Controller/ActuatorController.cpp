@@ -213,7 +213,7 @@ void ActuatorController::dispatchSlot(int slotIndex, const RelaySlot &slot, int 
     lastAppliedPercent[slotIndex] = appliedPercent;
 }
 
-// Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (roadmap #396(4) made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
+// Interval/Schedule are ignored below this point when nested deep in a tree by anything other than these two leaf types themselves - a boundary can come from ANY node inside ANY rule, regardless of its position in that rule's AND/OR tree, so this walks every node recursively rather than just top-level ones (made nesting possible). 30s floor avoids excessive wake-cycle thrashing right next to a boundary, especially for battery devices.
 namespace
 {
     void collectWakeBoundary(const ConditionNode nodes[], int nodeIndex, int localWeekday, int localSecondsOfDay, time_t epochSeconds, int &best)
@@ -322,7 +322,7 @@ bool ActuatorController::evaluateRule(const Rule &rule, SensorData sensorData, t
     {
         return false; // ConfigParser rejects an empty tree at parse time - belt and suspenders.
     }
-    // Epoch plausibility (before the first successful NTP sync) only matters to Interval/Schedule nodes - evaluateNode itself gates those, a Comparison-only tree is unaffected by clock state, same distinction as before #396.
+    // Epoch plausibility (before the first successful NTP sync) only matters to Interval/Schedule nodes - evaluateNode itself gates those, a Comparison-only tree is unaffected by clock state, same distinction as before.
     MetricReadings readings = collectMetricReadings(sensorData);
     return evaluateNode(rule.nodes, rule.rootIndex, isCurrentlyOn, readings, epochSeconds, localWeekday, localSecondsOfDay);
 }
@@ -463,7 +463,7 @@ bool ActuatorController::consumeSensorStaleEvent(String &outMessage)
     return true;
 }
 
-// Forces every currently-assigned relay slot (and, roadmap #231, PWM slot) off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
+// Forces every currently-assigned relay slot (and PWM slot) off with no sensor reading or rule evaluation - shared by initController()'s EmergencyStop/relayEnabled branch and the public forceAllRelaysOff() below.
 void ActuatorController::driveEveryAssignedRelayOff() const
 {
     int i2cAddr = deviceConfig.configPin.RELAY_I2C_ADDRESS;
@@ -672,7 +672,7 @@ void ActuatorController::initController(SensorData sensorData, time_t epochSecon
         }
     }
 
-    // Master safety switches - either one lets the server force every relay off regardless of what the rules below would otherwise decide. emergencyStop is tenant-wide and fail-closed (roadmap #230); relayEnabled is this device's own per-controller toggle.
+    // Master safety switches - either one lets the server force every relay off regardless of what the rules below would otherwise decide. emergencyStop is tenant-wide and fail-closed; relayEnabled is this device's own per-controller toggle.
     if (deviceConfig.emergencyStop || !deviceConfig.configController.relayEnabled)
     {
         driveEveryAssignedRelayOff();

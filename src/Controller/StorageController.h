@@ -22,7 +22,7 @@ public:
     // Lowest-numbered (oldest) queued file's name (e.g. "buffer/00001.json"), or "" when the queue is empty.
     static String oldestBufferedSensorFile();
 
-    // Same as bufferSensorDataToDisk()/oldestBufferedSensorFile() but under /relaybuffer, for LoRaGatewayRelayController's relayed uplinks (roadmap #396(7)) - a separate directory since the payload/endpoint differ from this device's own SensorData.
+    // Same as bufferSensorDataToDisk()/oldestBufferedSensorFile() but under /relaybuffer, for LoRaGatewayRelayController's relayed uplinks - a separate directory since the payload/endpoint differ from this device's own SensorData.
     static bool bufferRelayUplinkToDisk(String payloadJson);
     static String oldestBufferedRelayFile();
 
@@ -37,7 +37,7 @@ public:
     // "" means no backup was ever written, or the read itself failed - same "empty means absent" convention as loadFile().
     static String loadRegistrationBackup();
 
-    // The last WiFi network DeviceController::initializeWifi() actually verified a connection on - source of truth for a rollback after a failed UpdateWifiCredentials/ProvisionDevice switch (roadmap #396(8)), since WiFi.SSID()/psk() only report the currently-connected network, not the last-known-good one.
+    // The last WiFi network DeviceController::initializeWifi() actually verified a connection on - source of truth for a rollback after a failed UpdateWifiCredentials/ProvisionDevice switch, since WiFi.SSID()/psk() only report the currently-connected network, not the last-known-good one.
     static bool saveWifiCredentialsBackup(String ssid, String password);
     // Both out-params set to "" if no backup was ever written.
     static void loadWifiCredentialsBackup(String &ssid, String &password);

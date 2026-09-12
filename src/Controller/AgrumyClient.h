@@ -20,7 +20,7 @@ struct OtaParams
     String expectedSha256;
 };
 
-// Roadmap #457 (EPIC A3) - the transport/session layer split out of ServiceController: endpoints, the
+// The transport/session layer split out of ServiceController: endpoints, the
 // persistent network task, session-token (apiAuth) lifecycle, and 401/429 retry policy. ServiceController
 // keeps the application layer (ConfigApplier/CommandExecutor - apiConfig/processPendingCommand/pushEvent
 // and friends), calling into this class for every actual network round trip instead of doing its own I/O.

@@ -5,14 +5,14 @@
 #include "Logic/LoRaIntervalLogic.h"
 #include "Logic/LoRaPayloadLogic.h"
 
-/// Orchestrates the LoRa/Profile B device profile (roadmap #220/#225): OTAA join with the session
+/// Orchestrates the LoRa/Profile B device profile: OTAA join with the session
 /// persisted to LittleFS (so a battery node skips a full rejoin after deep sleep), one uplink per
 /// cycle built from LoRaPayloadLogic, and a sleep interval scaled by the network's current spreading
 /// factor via LoRaIntervalLogic. Deliberately narrow next to DeviceController/ServiceController - no
 /// WiFi, no OTA, no command queue: EU868's payload limit (as low as 51 bytes at DR0) leaves no room
 /// for that here, see the roadmap's own "significantly more limited device profile" note. The radio
 /// pin mapping, join flow and session-persistence contract are UNVERIFIED against real
-/// hardware/ChirpStack - see roadmap #225.
+/// hardware/ChirpStack.
 class LoRaController
 {
 public:

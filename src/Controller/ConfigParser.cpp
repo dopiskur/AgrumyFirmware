@@ -239,7 +239,7 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
     // Absent/null (zone never set one) falls back to 0 (Hold) - see ConfigController::heatingFailSafePolicy's own remarks for the value convention.
     currentConfig.configController.heatingFailSafePolicy = deviceConfigController["heatingFailSafePolicy"] | 0;
 
-    // Roadmap #219 - capped at MAX_MANUAL_OVERRIDES, same "ArduinoJson has no dynamic growth on-device" reasoning as rules/relays above.
+    // Capped at MAX_MANUAL_OVERRIDES, same "ArduinoJson has no dynamic growth on-device" reasoning as rules/relays above.
     JsonArray manualOverrides = deviceConfigController["manualOverrides"];
     currentConfig.configController.manualOverrideCount = 0;
     for (JsonObject mo : manualOverrides)

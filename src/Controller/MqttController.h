@@ -12,7 +12,7 @@
 class DeviceController;
 
 // Additive telemetry channel alongside HTTPS. publishSensorData() connects/publishes/disconnects
-// fresh each loop() cycle. The persistent command channel (roadmap #146) is separate and opt-in: a
+// fresh each loop() cycle. The persistent command channel is separate and opt-in: a
 // mains-powered device that never deep-sleeps can keep one PubSubClient connection open and be
 // dispatched a command the instant the server publishes it, instead of waiting for its next HTTP
 // poll - see beginPersistentIfEnabled()/poll(). A deep-sleeping device cannot use this at all (the

@@ -13,7 +13,7 @@
 class DeviceController;
 class SensorController;
 
-// Roadmap #457 (EPIC A3) - ServiceController is now the application layer (ConfigApplier/
+// ServiceController is now the application layer (ConfigApplier/
 // CommandExecutor: apiConfig, processPendingCommand, pushEvent and friends); every actual network
 // round trip is forwarded to AgrumyClient (see AgrumyClient.h), the transport/session layer split out
 // of this class. The forwarding methods below (requestPost/requestGet/firmwareUpdate/mqttPublish/
@@ -72,7 +72,7 @@ public:
     // >0 right after apiConfig() returned a 429 ("Wait" - see RelayRateLimitedException server-side): main.cpp's loop() sleeps this many seconds instead of the normal cycle before polling again. Always reset to 0 at the top of apiConfig().
     int waitSeconds = 0;
 
-    // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. Roadmap #133's local display "last sync" page reads this; not set on a 429/error response.
+    // Device-local wall-clock (DeviceController::getEpochSeconds()) of the last config poll that got a real HTTP response (200, with or without a changed body) - 0 means never. The local display "last sync" page reads this; not set on a 429/error response.
     time_t lastConfigSyncEpoch = 0;
 };
 

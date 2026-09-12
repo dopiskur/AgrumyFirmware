@@ -100,7 +100,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     int RELAY_PINS[8] = {0, 1, 2, 3, 4, 5, -1, -1}; // slots 7-8 UNDEFINED - -1, not 0, since bit 0 is a real, wired PCF8574 bit here
 
-    // Roadmap #231 - all UNASSIGNED (-1). KC868-A6's relays sit entirely behind the PCF8574 I2C expander above, which has no PWM register at all - dimming here would need genuinely separate direct-GPIO pins wired to external MOSFET/SSR hardware, and which GPIOs are actually free after the relay I2C bus + onboard SX1278 LoRa socket + RS485/I2C peripherals is NOT yet verified against a real schematic (see agrumy-roadmap-todo.md #231's own explicit caveat) - do not assign a pin here without checking real hardware first.
+    // All UNASSIGNED (-1). KC868-A6's relays sit entirely behind the PCF8574 I2C expander above, which has no PWM register at all - dimming here would need genuinely separate direct-GPIO pins wired to external MOSFET/SSR hardware, and which GPIOs are actually free after the relay I2C bus + onboard SX1278 LoRa socket + RS485/I2C peripherals is NOT yet verified against a real schematic (see agrumy-roadmap-todo.md the own explicit caveat) - do not assign a pin here without checking real hardware first.
     int PWM_PINS[4] = {-1, -1, -1, -1};
     // Same "all UNASSIGNED until a real schematic confirms free GPIOs" caveat as PWM_PINS above. This ESP32 (not S3) variant does have a native DAC, but its two DAC-capable pins are not yet checked against what the PCF8574/LoRa/RS485 peripherals above already claim.
     int ANALOG_PINS[4] = {-1, -1, -1, -1};
@@ -135,7 +135,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     int RELAY_PINS[8] = {1, 2, 41, 42, 45, 46, -1, -1}; // slots 7-8 UNDEFINED
 
-    // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
+    // UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (do not guess a pin here).
     int PWM_PINS[4] = {-1, -1, -1, -1};
     // Same caveat as PWM_PINS. This is an S3 target, which has NO native DAC peripheral at all (dropped from the S3 silicon) - Analog0to10V here would need an external I2C DAC (e.g. MCP4725), not yet wired on any board, so this stays unassigned regardless of schematic.
     int ANALOG_PINS[4] = {-1, -1, -1, -1};
@@ -169,7 +169,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
 
     int RELAY_PINS[8] = {14, 27, 26, 25, -1, -1, -1, -1}; // slots 5-8 UNDEFINED
 
-    // Roadmap #231 - UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (see agrumy-roadmap-todo.md #231's own caveat - do not guess a pin here).
+    // UNASSIGNED (-1) until a real schematic confirms which GPIOs are actually free after the relay bank above (do not guess a pin here).
     int PWM_PINS[4] = {-1, -1, -1, -1};
     // Same caveat as PWM_PINS. This #else branch covers both classic-ESP32 (esp32dev, has a native DAC on GPIO25/26 - already claimed by RELAY_PINS above on this board) and several S3 targets (esp32s3usbotg, the Heltec/LoRa environments - no native DAC at all), so a single shared value here can't be chip-correct for all of them; stays unassigned until a per-build variant is split out.
     int ANALOG_PINS[4] = {-1, -1, -1, -1};
@@ -187,7 +187,7 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     int RELAY_I2C_SCL=0;
 #endif
 
-    // Roadmap #133 - this kit's dedicated OLED slot, shares the RELAY_I2C_SDA/SCL bus above (different address, same wires). 0 means "no local display" - Controller/DisplayController.cpp isn't even compiled in for other kits (see platformio.ini build_src_filter).
+    // This kit's dedicated OLED slot, shares the RELAY_I2C_SDA/SCL bus above (different address, same wires). 0 means "no local display" - Controller/DisplayController.cpp isn't even compiled in for other kits (see platformio.ini build_src_filter).
 #if defined(AGRUMY_KIT_KC868_A6)
     int DISPLAY_I2C_ADDRESS=0x3C;
 #else
@@ -239,7 +239,7 @@ static const int MAX_RULES = 32;
 // Ceiling on physically-wired relay slots a board can report - bump this (and each board's ConfigPin.RELAY_PINS array) for a bigger relay bank, no other schema/wire-format change needed.
 static const int MAX_RELAY_SLOTS = 8;
 
-// Roadmap #231 - separate cap from MAX_RELAY_SLOTS since PWM outputs use their own dedicated ConfigPin.PWM_PINS array, never shared with the relay bank.
+// Separate cap from MAX_RELAY_SLOTS since PWM outputs use their own dedicated ConfigPin.PWM_PINS array, never shared with the relay bank.
 static const int MAX_PWM_SLOTS = 4;
 
 // Same "own dedicated ConfigPin array" reasoning as MAX_PWM_SLOTS, for the Analog0to10V/Servo outputKinds.
@@ -310,7 +310,6 @@ struct FunctionControlConfig
     double pidSampleIntervalSeconds = 0;
 };
 
-// Roadmap #219.
 enum ManualOverrideMode
 {
     MANUAL_OVERRIDE_DURATION = 1,
@@ -331,7 +330,7 @@ struct ManualOverride
     int relayFunction = 0; // RelayFunctionType raw value
     int mode = 0;           // ManualOverrideMode raw value
     time_t expiresAtEpoch = 0;
-    // Target mode only - metric selection mirrors api.Models.SensorMetric's Temperature/Humidity/Moisture (roadmap #219's allowed subset for Target mode).
+    // Target mode only - metric selection mirrors api.Models.SensorMetric's Temperature/Humidity/Moisture (the allowed subset for Target mode).
     int targetMetric = 0;
     double targetThreshold = 0;
     double targetHysteresis = 0;
@@ -364,7 +363,7 @@ struct ConfigController
     // What a Heating rule does once its temperature reading has been stale (NaN) for longer than MAX_HEATING_SENSOR_STALE_SECONDS - matches api.Shared.Models.HeatingFailSafePolicyType exactly (0=Hold, 1=Off, 2=ScheduleOnly); an unrecognized value also falls back to Hold (see ActuatorController::evaluateRule).
     int heatingFailSafePolicy = 0;
 
-    // Roadmap #219 - present only while the server still considers the command active, see ManualOverride's own remarks.
+    // Present only while the server still considers the command active, see ManualOverride's own remarks.
     ManualOverride manualOverrides[MAX_MANUAL_OVERRIDES];
     int manualOverrideCount = 0;
 
@@ -397,13 +396,13 @@ struct DeviceConfig
 
     int sleepSeconds;
     bool sleepDeep;
-    // Roadmap #383 - only meaningful under AGRUMY_LORA_GATEWAY_CAPABLE; main.cpp's loop() gates LoRaGatewayRelayController::poll() on this.
+    // Only meaningful under AGRUMY_LORA_GATEWAY_CAPABLE; main.cpp's loop() gates LoRaGatewayRelayController::poll() on this.
     bool loRaGatewayEnabled = false;
 
     // Current UTC offset in seconds (positive east of UTC), refreshed on every config sync; lets scheduleRelayFunction() compute local day/time with plain integer math, no on-device IANA/DST database.
     int utcOffsetSeconds = 0;
 
-    // Server wall-clock at response time (roadmap #381) - DeviceController::loadConfig feeds this to applyServerEpochFallback(), which only takes effect while NTP has never synced.
+    // Server wall-clock at response time - DeviceController::loadConfig feeds this to applyServerEpochFallback(), which only takes effect while NTP has never synced.
     long serverUtcEpoch = 0;
 
     bool deviceSensorEnabled;
@@ -412,7 +411,7 @@ struct DeviceConfig
     bool enabled;
     bool debug;           // 0 serial print disabled, 1 serial print enabled
     bool reset;
-    bool emergencyStop; // tenant-wide fail-closed switch (roadmap #230) - forces every relay off ahead of any rule, independent of configController.relayEnabled
+    bool emergencyStop; // tenant-wide fail-closed switch - forces every relay off ahead of any rule, independent of configController.relayEnabled
 
     bool firmwareUpdate; // 0 no update, 1 update available
     char firmwareVersion[32] = ""; // newest published version for this device type, "" if none

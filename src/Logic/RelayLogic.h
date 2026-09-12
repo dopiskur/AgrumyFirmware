@@ -54,12 +54,12 @@ struct MetricReadings
 // value. Returns NAN for an unrecognized metric too.
 double readMetric(int metric, const MetricReadings &readings);
 
-// Roadmap #396(4). Recursively evaluates one ConditionNode - a GroupNode folds its children
+// Recursively evaluates one ConditionNode - a GroupNode folds its children
 // left-to-right by groupOperator ("(A op B) op C", never re-associated), same fold AgrumyFirmware
-// used before #396 just now over an arbitrarily nested tree instead of one flat list. wasRuleTrue is
+// used before, just now over an arbitrarily nested tree instead of one flat list. wasRuleTrue is
 // the WHOLE rule's last-known folded result, used as every Comparison node's GT/LT dead-zone latch
 // input (no per-node state is kept, same approximation the server-side evaluator documents). A NaN
-// reading makes a Comparison node evaluate false, same fail-safe default as before #396 - the one
+// reading makes a Comparison node evaluate false, same fail-safe default as before - the one
 // exception (Heating's bounded hold-through-NaN) is applied by the caller (ActuatorController::
 // evaluateRule), not here, since it needs stateful Serial/event-reporting this pure function can't do.
 bool evaluateNode(const ConditionNode nodes[], int nodeIndex, bool wasRuleTrue, const MetricReadings &readings,
@@ -73,10 +73,10 @@ bool runTimeCeilingHit(time_t epochSeconds, time_t onSinceEpoch, int maxRunSecon
 // True while less than cooldownSeconds have passed since the pump's last real OFF transition (offSinceEpoch, 0 = never been off since boot). cooldownSeconds <= 0 disables the cooldown (never active).
 bool cooldownActive(time_t epochSeconds, time_t offSinceEpoch, int cooldownSeconds);
 
-// Roadmap #219: whether a manual override should force its target relay function ON this tick. Past expiresAtEpoch (the hard per-command safety cap, computed server-side from the zone's own MaxRunSeconds) always returns false regardless of mode - the caller falls back to its normal automated-rule result for that tick. Also false while epochSeconds is implausible (before the first NTP/server-epoch sync - same MIN_PLAUSIBLE_EPOCH gate CONDITION_INTERVAL/CONDITION_SCHEDULE already use in ActuatorController.cpp, duplicated here rather than #included to keep this header Arduino-independent), since expiresAtEpoch could otherwise never be reached and the override would run forever. mode==1 (Duration) is unconditional while inside the window; mode==2 (Target) defers to the SAME dead-zone math as an automated Threshold condition (computeThresholdState) - reading/threshold/hysteresis/turnsOnAboveThreshold are ignored for Duration mode.
+// Whether a manual override should force its target relay function ON this tick. Past expiresAtEpoch (the hard per-command safety cap, computed server-side from the zone's own MaxRunSeconds) always returns false regardless of mode - the caller falls back to its normal automated-rule result for that tick. Also false while epochSeconds is implausible (before the first NTP/server-epoch sync - same MIN_PLAUSIBLE_EPOCH gate CONDITION_INTERVAL/CONDITION_SCHEDULE already use in ActuatorController.cpp, duplicated here rather than #included to keep this header Arduino-independent), since expiresAtEpoch could otherwise never be reached and the override would run forever. mode==1 (Duration) is unconditional while inside the window; mode==2 (Target) defers to the SAME dead-zone math as an automated Threshold condition (computeThresholdState) - reading/threshold/hysteresis/turnsOnAboveThreshold are ignored for Duration mode.
 bool evaluateManualOverride(int mode, time_t epochSeconds, time_t expiresAtEpoch, bool isCurrentlyOn, double reading, double threshold, double hysteresis, bool turnsOnAboveThreshold);
 
-// Roadmap #231 - PWM output is a proportional decorator on the SAME on/off decision a relay slot already computed for this function, not an independent output: full intensityPercent while on, 0 while off. Clamped to [0,100] since a bad server value must not exceed the physical duty-cycle range.
+// PWM output is a proportional decorator on the SAME on/off decision a relay slot already computed for this function, not an independent output: full intensityPercent while on, 0 while off. Clamped to [0,100] since a bad server value must not exceed the physical duty-cycle range.
 int computePwmDutyPercent(bool shouldBeOn, int intensityPercent);
 
 // Positional actuators (Screen/Vent) fold several simultaneously-true rules to ONE target percent by

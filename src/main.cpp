@@ -1,4 +1,4 @@
-// Profile B (LoRa, roadmap #220/#225) is a fundamentally different device: no WiFi/HTTP, no
+// Profile B (LoRa) is a fundamentally different device: no WiFi/HTTP, no
 // OTA/buffer/command queue - EU868's tiny payload limit leaves no room for that stack. Kept as one
 // file with the WiFi profile below (not a separate main.cpp) so both profiles stay buildable from
 // the same source tree, same pattern as the existing AGRUMY_KIT_KC868_A6 board-variant branching.
@@ -82,7 +82,7 @@ void setup()
 void loop()
 {
     // Mains-powered vs battery is not yet configurable for this profile - assume battery, the more
-    // conservative (longer sleep) choice, until #225's real hardware pass adds provisioning for it.
+    // conservative (longer sleep) choice, until the real hardware pass adds provisioning for it.
     uint32_t sleepSeconds = loRaController.runCycleAndGetSleepSeconds(true);
     esp_task_wdt_reset();
 
@@ -112,12 +112,12 @@ void loop()
 #include "Controller/ActuatorController.h"
 #include "Controller/MqttController.h"
 
-// Roadmap #383 - standalone/dual-role LoRa Gateway relay, only compiled in for boards with a LoRa chip wired (KC868-A6, Heltec V3/V4).
+// Standalone/dual-role LoRa Gateway relay, only compiled in for boards with a LoRa chip wired (KC868-A6, Heltec V3/V4).
 #ifdef AGRUMY_LORA_GATEWAY_CAPABLE
 #include "Controller/LoRaGatewayRelayController.h"
 #endif
 
-// Roadmap #133 - KC868-A6's dedicated OLED slot only (see platformio.ini's per-env build_src_filter).
+// KC868-A6's dedicated OLED slot only (see platformio.ini's per-env build_src_filter).
 #include "Controller/InboxController.h"
 #ifdef AGRUMY_KIT_KC868_A6
 #include "Controller/DisplayController.h"
@@ -437,7 +437,7 @@ void loop()
 #else
   const uint32_t chunkStep = sleepStep;
 #endif
-  // No-op unless mqttConfig.json opted into persistentCommandChannel (roadmap #146) - this is the
+  // No-op unless mqttConfig.json opted into persistentCommandChannel - this is the
   // only place in the WiFi profile a device stays powered/idle long enough for it to be worthwhile.
   mqtt.beginPersistentIfEnabled(deviceConfig);
   while (sleepRemaining > 0)

@@ -56,7 +56,7 @@ static const unsigned long NTP_RESYNC_INTERVAL_SECONDS = 24UL * 60 * 60;
 static unsigned long lastNtpAttemptMs = 0;
 static const unsigned long NTP_RETRY_THROTTLE_MS = 60000UL;
 
-// Server-epoch fallback (roadmap #381) - only ever read while timeClient.isTimeSet() is false, see getEpochSeconds().
+// Server-epoch fallback - only ever read while timeClient.isTimeSet() is false, see getEpochSeconds().
 static time_t serverEpochFallbackBase = 0;
 static unsigned long serverEpochFallbackSetAtMs = 0;
 static bool serverEpochFallbackActive = false;
@@ -359,7 +359,7 @@ void DeviceController::initializeWifi()
   wifiManager.setConfigPortalTimeout(120);
   if (wifiManager.autoConnect())
   {
-    // A verified-good connection, right now - the actual source of truth ServiceController's WiFi-switch rollback reads from (roadmap #396(8)), since WiFi.SSID()/psk() alone go blank whenever the device isn't currently connected.
+    // A verified-good connection, right now - the actual source of truth ServiceController's WiFi-switch rollback reads from, since WiFi.SSID()/psk() alone go blank whenever the device isn't currently connected.
     StorageController::saveWifiCredentialsBackup(WiFi.SSID(), WiFi.psk());
   }
 }

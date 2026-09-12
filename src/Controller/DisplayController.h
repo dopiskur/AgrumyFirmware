@@ -5,7 +5,7 @@
 #include "../Model/DeviceModel.h"
 #include "ActuatorController.h"
 
-// Roadmap #133 - read-only OLED status screen (SSD1306 128x64), KC868-A6 only (dedicated slot, shares
+// Read-only OLED status screen (SSD1306 128x64), KC868-A6 only (dedicated slot, shares
 // the PCF8574 relay expander's I2C bus). Strictly passive: never writes deviceConfig or touches relay
 // output, only visualizes state the device already has locally. Auto-rotates through a few pages so a
 // small screen with no input device can still show everything without scrolling/buttons.

@@ -6,7 +6,7 @@
 
 class ServiceController;
 
-// Roadmap #383 - standalone/dual-role WiFi+LoRa gateway. Same RF receive/decode as
+// Standalone/dual-role WiFi+LoRa gateway. Same RF receive/decode as
 // LoRaGatewayBridgeController, but relays each frame directly over THIS device's own WiFi/HTTP
 // connection (POST /api/Gateway/RelayUplink) instead of a serial link to a separate,
 // mains-powered Agrumy.Gateway process - lets an ordinary sensor/controller device (KC868-A6) or

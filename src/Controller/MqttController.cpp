@@ -23,7 +23,7 @@ MqttController mqtt;
 
 namespace
 {
-    // Persistent-connection state for the command channel (roadmap #146) - kept at file scope, not
+    // Persistent-connection state for the command channel - kept at file scope, not
     // as MqttController members, so PubSubClient::setCallback's plain function pointer has something
     // fixed to close over via these globals instead of instance state.
     WiFiClientSecure persistentSecureClient;

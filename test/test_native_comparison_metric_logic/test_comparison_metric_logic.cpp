@@ -2,7 +2,7 @@
 #include <cmath>
 #include "../../src/Logic/RelayLogic.h"
 
-// Roadmap #396(4) - the new ComparisonOperator variants (GTE/LTE/EQ/BETWEEN, no dead-zone latch unlike
+// The new ComparisonOperator variants (GTE/LTE/EQ/BETWEEN, no dead-zone latch unlike
 // GT/LT) and the two new DERIVED metrics (DewPoint/DewPointSpread), reachable through readMetric.
 
 void setUp(void) {}

@@ -89,7 +89,7 @@ public:
     // Forces every assigned relay off without reading sensors or evaluating rules - for a cycle where initController() itself is being skipped entirely (disabled device, server backoff wait).
     void forceAllRelaysOff() const;
 
-    // Read-only, no relay writes - roadmap #133's local display page. False for an unassigned function, same as it being physically off.
+    // Read-only, no relay writes - the local display page. False for an unassigned function, same as it being physically off.
     bool isRelayOn(RelayFunctionType relayFunction) const;
 
     // One-shot poll of every function whose driven state (on/off, and for a positional function its target percent) changed since the last call - same polling contract as consumeSafetyLimitEvent. changes must hold at least MAX_REPORTED_FUNCTIONS entries; returns how many were written.
@@ -106,7 +106,7 @@ private:
     // Shared by initController()'s EmergencyStop/relayEnabled branch and forceAllRelaysOff().
     void driveEveryAssignedRelayOff() const;
 
-    // Roadmap #396(4). Evaluates a Rule's whole ConditionNode tree (RelayLogic::evaluateNode) - the
+    // Evaluates a Rule's whole ConditionNode tree (RelayLogic::evaluateNode) - the
     // ONE exception is Heating's bounded hold-through-NaN-temperature safety net, applied here (not
     // inside the pure evaluateNode) since it needs Serial/event-reporting and heatingSensorStaleSinceEpoch
     // state. localWeekday (0=Sunday..6=Saturday) and localSecondsOfDay (0..86399) are computed ONCE per
@@ -128,7 +128,7 @@ private:
     // const: called from evaluateCondition(), which is const - pendingSensorStaleMessage is mutable accordingly.
     void reportSensorStale(const String &message) const;
 
-    // Roadmap #219. nullptr if no manual command targets this function (or it never arrived - the server only sends what's still active).
+    // Nullptr if no manual command targets this function (or it never arrived - the server only sends what's still active).
     const ManualOverride *findManualOverride(RelayFunctionType relayFunction) const;
 
     // NAN for an unrecognized metric - same "no reading this cycle" convention evaluateCondition already uses, so the caller's existing isnan() guard covers it too.

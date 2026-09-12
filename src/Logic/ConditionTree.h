@@ -4,7 +4,7 @@
 // Deliberately plain C++ (no Arduino.h) so RelayLogic.h/.cpp can #include this and stay
 // natively-testable - same reasoning as RelayLogic.h's own header comment.
 
-// Roadmap #396(4). NODE_ASTRONOMICAL/NODE_RULE_TRIGGERED never reach firmware - the server compiles
+// NODE_ASTRONOMICAL/NODE_RULE_TRIGGERED never reach firmware - the server compiles
 // every Astronomical node into an effective Schedule node before sending (api.Devices.
 // AstronomicalRuleResolver), and RuleTriggered only ever appears inside a Notification-action rule,
 // which never leaves the server at all (only Relay-action rules are sent to a device).
@@ -49,7 +49,7 @@ enum ComparisonOperatorType
     COMPARE_BETWEEN = 6,
 };
 
-// Roadmap #212/#396. Operator joining a GroupNode's children left-to-right - unused (0) for a non-group node.
+// Operator joining a GroupNode's children left-to-right - unused (0) for a non-group node.
 enum LogicalOperator
 {
     LOGICAL_AND = 1,
@@ -68,7 +68,7 @@ struct ConditionNode
 {
     int type = 0; // NodeType raw value
 
-    // Comparison only. Metric is explicit per node (roadmap #396(4)) - no longer implicit from the owning Rule's targetFunction.
+    // Comparison only. Metric is explicit per node - no longer implicit from the owning Rule's targetFunction.
     int metric = 0; // SensorMetricType raw value
     int op = 0;      // ComparisonOperatorType raw value
     double value1 = 0;
@@ -90,7 +90,7 @@ struct ConditionNode
     int childCount = 0;
 };
 
-// Roadmap #396(4). Beyond this cap, ConfigParser silently drops the whole rule (server enforces a
+// Beyond this cap, ConfigParser silently drops the whole rule (server enforces a
 // matching cap) - total node count across the WHOLE tree (leaves+groups), not just top-level
 // conditions like the old flat MAX_CONDITIONS_PER_RULE(8) was. Kept equal to that old cap deliberately -
 // deviceConfig.configController.rules[MAX_RULES] is a static array (ConditionNode's own size x this x
@@ -99,7 +99,7 @@ struct ConditionNode
 // four plus an ungrouped fifth), just not deep/wide trees.
 static const int MAX_NODES_PER_RULE = 8;
 
-// One automation rule: targetFunction plus a recursive ConditionNode tree (roadmap #396(4), replaces
+// One automation rule: targetFunction plus a recursive ConditionNode tree (replaces
 // the old flat left-to-right AND/OR fold - "(A AND B) OR (C AND D)" is now expressible via nested
 // GroupNodes, evaluated by RelayLogic::evaluateNode). Several Rules for the same targetFunction fold
 // together by MAX'ing their targetPercent (foldTargetPercent), for every function.

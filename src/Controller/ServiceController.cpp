@@ -38,7 +38,7 @@ extern const char *firmware; // main.cpp - the RUNNING image's version
 #define AGRUMY_KIT ""
 #endif
 
-// Roadmap #457 (EPIC A3) - the transport/session logic that used to live here (network task,
+// The transport/session logic that used to live here (network task,
 // requestPost/requestGet/requestPostSync/requestGetSync, firmwareUpdate, mqttPublish/
 // mqttConnectPersistent, maskSecret, apiAuthenticate, isHardResetPending) moved to AgrumyClient (see
 // AgrumyClient.h/.cpp). These forwards exist so every existing external caller of `service.xxx(...)`
@@ -267,7 +267,7 @@ bool ServiceController::provisionDiscoveredDevice(const String& payloadJson)
     // Server's own current host, not this scanning device's own (possibly stale) deviceConfig.servicePoint - falls back to it only for a command queued before the server started sending ServicePoint.
     String provisionedServicePoint = payload["ServicePoint"] | deviceConfig.servicePoint;
 
-    // From NVS, not WiFi.SSID()/psk() (roadmap #396(8)) - those only report the currently connected network, blank if this device happens to not be connected right now.
+    // From NVS, not WiFi.SSID()/psk() - those only report the currently connected network, blank if this device happens to not be connected right now.
     String ownSsid, ownPsk;
     StorageController::loadWifiCredentialsBackup(ownSsid, ownPsk);
 
@@ -358,7 +358,7 @@ bool ServiceController::switchWifiNetwork(const String& payloadJson, ServiceRequ
         return false;
     }
 
-    // From NVS, not WiFi.SSID()/psk() (roadmap #396(8)) - those only report the currently connected network, blank if this device happens to not be connected right now.
+    // From NVS, not WiFi.SSID()/psk() - those only report the currently connected network, blank if this device happens to not be connected right now.
     String oldSsid, oldPsk;
     StorageController::loadWifiCredentialsBackup(oldSsid, oldPsk);
 

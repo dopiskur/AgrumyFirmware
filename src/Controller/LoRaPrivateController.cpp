@@ -106,7 +106,7 @@ bool LoRaPrivateController::loadConfig()
     codingRate = doc["codingRate"] | 7;
     txPowerDbm = doc["txPowerDbm"] | 22;
 
-    // Roadmap #395 finding 3 - mandatory from here on, AgrumyService's RelayUplink now rejects any uplink from a device with no key provisioned, so an un-keyed node has nothing useful to transmit.
+    // Mandatory from here on, AgrumyService's RelayUplink now rejects any uplink from a device with no key provisioned, so an un-keyed node has nothing useful to transmit.
     String pskHex = doc["psk"] | String("");
     if (pskHex.length() != 64)
     {

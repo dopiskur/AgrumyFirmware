@@ -238,7 +238,7 @@ String StorageController::oldestBufferedSensorFile()
   return best.isEmpty() ? String() : "buffer/" + best;
 }
 
-// Same shape as bufferSensorDataToDisk()/oldestBufferedSensorFile(), separate /relaybuffer directory (roadmap #396(7)) - a relayed LoRa uplink is a different payload/endpoint than this device's own SensorData, mixing them into /buffer would misroute relayed rows through the sensor-data flush path.
+// Same shape as bufferSensorDataToDisk()/oldestBufferedSensorFile(), separate /relaybuffer directory - a relayed LoRa uplink is a different payload/endpoint than this device's own SensorData, mixing them into /buffer would misroute relayed rows through the sensor-data flush path.
 bool StorageController::bufferRelayUplinkToDisk(String payloadJson)
 {
   size_t total = LittleFS.totalBytes();
@@ -427,7 +427,7 @@ String StorageController::loadRegistrationBackup()
   return data;
 }
 
-// Roadmap #396(8) - WiFi.SSID()/WiFi.psk() report the CURRENTLY CONNECTED STA credentials, not the last-known-good ones; empty whenever the device happens to not be connected at the moment a rollback needs them. This NVS copy is the actual source of truth for "what network was this device last successfully on", written only from a state DeviceController::initializeWifi() already knows is verified-good.
+// WiFi.SSID()/WiFi.psk() report the CURRENTLY CONNECTED STA credentials, not the last-known-good ones; empty whenever the device happens to not be connected at the moment a rollback needs them. This NVS copy is the actual source of truth for "what network was this device last successfully on", written only from a state DeviceController::initializeWifi() already knows is verified-good.
 bool StorageController::saveWifiCredentialsBackup(String ssid, String password)
 {
   Preferences prefs;
