@@ -47,6 +47,7 @@ void ServiceController::beginNetworkTask() { AgrumyClient::beginNetworkTask(); }
 TaskHandle_t ServiceController::networkTaskHandle() { return AgrumyClient::networkTaskHandle(); }
 String ServiceController::maskSecret(const String &value) { return AgrumyClient::maskSecret(value); }
 ServiceData ServiceController::requestPost(const JsonDocument& jsonBuffer, ServiceRequest service) { return agrumyClient.requestPost(jsonBuffer, service); }
+ServiceData ServiceController::requestPost(const String& jsonRequest, ServiceRequest service) { return agrumyClient.requestPost(jsonRequest, service); }
 ServiceData ServiceController::requestGet(ServiceRequest service) { return agrumyClient.requestGet(service); }
 bool ServiceController::firmwareUpdate(const OtaParams& params) { return agrumyClient.firmwareUpdate(params); }
 bool ServiceController::mqttPublish(const String& topic, const String& payload) { return agrumyClient.mqttPublish(topic, payload); }

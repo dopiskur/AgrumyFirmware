@@ -29,6 +29,7 @@ public:
 
     void checkConfig(String payload); // For Debug only
     ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
+    ServiceData requestPost(const String& jsonRequest, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
 
     // Forwards to AgrumyClient::firmwareUpdate; true only once the image is downloaded and verified (caller reboots).

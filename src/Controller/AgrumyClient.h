@@ -35,6 +35,8 @@ public:
     static String maskSecret(const String &value);
 
     ServiceData requestPost(const JsonDocument& jsonBuffer, ServiceRequest serviceEndpoint);
+    // Pre-serialized body - lets a caller free its own JsonDocument before the TLS handshake instead of keeping both alive at once.
+    ServiceData requestPost(const String& jsonRequest, ServiceRequest serviceEndpoint);
     ServiceData requestGet(ServiceRequest service);
 
     // OtaController::update on the network task; true only once the image is downloaded and verified (caller reboots).
@@ -49,6 +51,7 @@ public:
 
     // Actual HTTP(S) logic, run ONLY on the persistent network task - see AgrumyClient.cpp's networkTaskLoop. Public only so that free function can call it; not part of the intended external API.
     ServiceData requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service);
+    ServiceData requestPostSync(const String& jsonRequest, ServiceRequest service);
     ServiceData requestGetSync(ServiceRequest service);
 
 private:

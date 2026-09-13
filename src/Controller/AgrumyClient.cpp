@@ -33,9 +33,10 @@ static const uint32_t NETWORK_ENQUEUE_TIMEOUT_MS = 200; // a full queue must fai
 // Heap-allocated: a facade timeout leaves the task still working on it, so whoever releases second frees it (Logic/NetworkRequestLogic.h).
 struct NetworkRequest
 {
-    enum Kind { Post, Get, Ota, MqttPublish, MqttConnect } kind;
+    enum Kind { Post, PostRaw, Get, Ota, MqttPublish, MqttConnect } kind;
     ServiceRequest service;
-    const JsonDocument *payload = nullptr; // Post only - points into the caller's own stack frame, valid for as long as requestPost() itself blocks waiting on done
+    JsonDocument payload; // Post only - a deep copy taken at enqueue time, not a pointer into the caller's stack frame: on a facade timeout the caller resumes (and may destroy its own JsonDocument) while the network task is still reading this one
+    String rawJson; // PostRaw only - already-serialized wire body, skips requestPostSync's own serializeJson step
     OtaParams ota; // Ota only
     ServiceData result; // Post/Get only
     bool ok = false; // Ota/MqttPublish/MqttConnect only - each Sync method's own bool result
@@ -73,7 +74,10 @@ static void networkTaskLoop(void *)
         switch (req->kind)
         {
         case NetworkRequest::Post:
-            req->result = agrumyClient.requestPostSync(*req->payload, req->service);
+            req->result = agrumyClient.requestPostSync(req->payload, req->service);
+            break;
+        case NetworkRequest::PostRaw:
+            req->result = agrumyClient.requestPostSync(req->rawJson, req->service);
             break;
         case NetworkRequest::Get:
             req->result = agrumyClient.requestGetSync(req->service);
@@ -153,7 +157,38 @@ ServiceData AgrumyClient::requestPost(const JsonDocument& jsonBuffer, ServiceReq
     NetworkRequest *req = new NetworkRequest();
     req->kind = NetworkRequest::Post;
     req->service = service;
-    req->payload = &jsonBuffer;
+    req->payload = jsonBuffer; // deep copy - see NetworkRequest::payload comment
+    req->done = xSemaphoreCreateBinary();
+
+    bool enqueued = networkRequestTryEnqueue([req]() {
+        return xQueueSend(networkQueue, &req, pdMS_TO_TICKS(NETWORK_ENQUEUE_TIMEOUT_MS)) == pdTRUE;
+    });
+    if (!enqueued)
+    {
+        Serial.println("[AgrumyClient] requestPost: network task queue full");
+        vSemaphoreDelete(req->done);
+        delete req;
+        return buildQueueFullError();
+    }
+
+    if (xSemaphoreTake(req->done, pdMS_TO_TICKS(NETWORK_REQUEST_TIMEOUT_MS)) != pdTRUE)
+    {
+        Serial.println("[AgrumyClient] requestPost: network task did not respond in time");
+        releaseNetworkRequest(req);
+        return buildTimeoutError();
+    }
+
+    ServiceData result = req->result;
+    releaseNetworkRequest(req);
+    return result;
+}
+
+ServiceData AgrumyClient::requestPost(const String& jsonRequest, ServiceRequest service)
+{
+    NetworkRequest *req = new NetworkRequest();
+    req->kind = NetworkRequest::PostRaw;
+    req->service = service;
+    req->rawJson = jsonRequest;
     req->done = xSemaphoreCreateBinary();
 
     bool enqueued = networkRequestTryEnqueue([req]() {
@@ -181,12 +216,16 @@ ServiceData AgrumyClient::requestPost(const JsonDocument& jsonBuffer, ServiceReq
 
 ServiceData AgrumyClient::requestPostSync(const JsonDocument& jsonBuffer, ServiceRequest service)
 {
-    ServiceData serviceData;
     String jsonRequest;
-
-    // Compact, not pretty - this string is the actual wire payload (http.POST(jsonRequest) below), never logged,
-    // so indentation/newlines only cost extra bytes over the air and extra peak heap right before the TLS handshake.
+    // Compact, not pretty - this string is the actual wire payload, never logged, so indentation/newlines
+    // only cost extra bytes over the air and extra peak heap right before the TLS handshake.
     serializeJson(jsonBuffer, jsonRequest);
+    return requestPostSync(jsonRequest, service);
+}
+
+ServiceData AgrumyClient::requestPostSync(const String& jsonRequest, ServiceRequest service)
+{
+    ServiceData serviceData;
 
     if ((WiFi.status() == WL_CONNECTED))
     {

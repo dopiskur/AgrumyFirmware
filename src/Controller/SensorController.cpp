@@ -1257,13 +1257,17 @@ bool SensorController::flushBufferedSensorData()
         }
         else
         {
-            ServiceData result = service.requestPost(payload, serviceRequest);
+            String wireJson;
+            serializeJson(payload, wireJson);
+            payload.clear(); // frees the parsed doc's own buffer now - the TLS handshake below needs its own large contiguous allocation and this buffered-file copy would otherwise still be sitting in heap fragmenting it
+
+            ServiceData result = service.requestPost(wireJson, serviceRequest);
             if (result.eventlog.errorCode == 401)
             {
                 // One re-auth retry, same as apiConfig()'s 401 handling.
                 Serial.println("[Sensor] Flush /" + filename + " got 401 - re-authenticating once");
                 service.apiAuthenticate(deviceConfig, serviceRequest, device);
-                result = service.requestPost(payload, serviceRequest);
+                result = service.requestPost(wireJson, serviceRequest);
             }
 
             if (result.eventlog.error)
