@@ -173,8 +173,8 @@ bool DeviceController::consumeConfigAppliedPending()
   return pending;
 }
 
-// exc_bt_info.bt holds up to 16 return addresses, but symbolicating ANY of them needs firmware.elf regardless of how many are included - more than a handful adds length without adding usable signal.
-static const uint32_t MaxCrashBacktraceAddresses = 8;
+// exc_bt_info.bt's own array (esp_core_dump_bt_info_t) is exactly 16 deep - take all of it, a shorter cap risks truncating before the actual application call site.
+static const uint32_t MaxCrashBacktraceAddresses = 16;
 
 String DeviceController::consumeCrashSummary()
 {
