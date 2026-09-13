@@ -167,6 +167,15 @@ bool StorageController::bufferSensorDataToDisk(String payloadJson)
     return false;
   }
 
+  // LittleFS.open() throws std::bad_alloc (uncaught -> abort) instead of returning a falsy File when the heap can't even satisfy its own shared_ptr control block - skip rather than crash.
+  const uint32_t LOW_HEAP_SKIP_THRESHOLD_BYTES = 20000;
+  uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < LOW_HEAP_SKIP_THRESHOLD_BYTES)
+  {
+    Serial.printf("[Device] Sensor buffer DISCARDED: FreeHeap=%u bytes (< %u) - deliberate data loss by design\n", freeHeap, LOW_HEAP_SKIP_THRESHOLD_BYTES);
+    return false;
+  }
+
   // Lazy one-time init per boot: continue numbering after the highest survivor from before the reboot, so chronological order holds across power cycles.
   static int nextIndex = -1;
   if (nextIndex < 0)
