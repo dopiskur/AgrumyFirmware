@@ -23,8 +23,11 @@ New-Item -ItemType Directory -Force -Path $Target | Out-Null
 $headers = @{ "Accept" = "application/vnd.github+json"; "User-Agent" = "agrumy-offline-repo" }
 if ($Token) { $headers["Authorization"] = "Bearer $Token" }
 
-# The same file-name convention the API enforces on import - anything else is not firmware.
-$pattern = '^agrumy-(?<board>[a-z0-9]+)-v(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\.bin$'
+# The same file-name convention the API enforces on import - anything else is not firmware. Board
+# allows '-'/'_' (kc868-a6, seeed_xiao_esp32c3); the (?<!-full) lookbehind keeps a full-image
+# filename (agrumy-<board>-full-v<version>.bin) from being swallowed as board="<board>-full" -
+# this script only ever wants the OTA .bin, never the full image.
+$pattern = '^agrumy-(?<board>[a-z0-9_-]+)(?<!-full)-v(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\.bin$'
 
 Write-Host "Reading releases of $Repo ..."
 $releases = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$Repo/releases?per_page=100"

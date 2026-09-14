@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        environment: [esp32dev, esp32s3usbotg]
+        environment: [esp32dev, esp32s3usbotg, seeed_xiao_esp32c3]
     steps:
       # Roadmap #121: every Action in this file is SHA-pinned, not just softprops/action-gh-release
       # below (same practice as the scaleTrigger repo) - a moving major tag (@v4) could be
@@ -70,6 +70,9 @@ jobs:
             esp32s3usbotg)
               # Every other supported chip (S3 included) boots its bootloader from 0x0.
               CHIP=esp32s3; BOOTLOADER_OFFSET=0x0; FLASH_SIZE=8MB ;;
+            seeed_xiao_esp32c3)
+              # C3 (RISC-V) also boots its bootloader from 0x0, same as S3 - only classic ESP32 (Xtensa) is special-cased above. 4MB flash confirmed on real XIAO C3 hardware (esptool chip_id).
+              CHIP=esp32c3; BOOTLOADER_OFFSET=0x0; FLASH_SIZE=4MB ;;
             *)
               echo "::error::no merge-bin offsets known for environment '${{ matrix.environment }}' - add a case above before adding this env to the release matrix."
               exit 1 ;;
@@ -110,7 +113,11 @@ jobs:
           # collide with a semver pre-release tag - see AgrumyApi's FirmwareVersion.cs remarks on
           # FullImageFileNameRegex for the full reasoning (that's the consuming side; this is the
           # producing side, kept in sync by convention, not by sharing code across repos/languages).
-          pattern = re.compile(r"^agrumy-(?P<board>[a-z0-9]+)-(?P<kind>full-)?v(?P<version>[^/]+)\.bin$")
+          # Board allows '-'/'_' (kc868-a6, seeed_xiao_esp32c3); the (?<!-full) lookbehind keeps a
+          # full-image name from being swallowed as board="<board>-full" with kind left unmatched -
+          # without it, greedy backtracking tries board="<board>-full" (now legal chars) before
+          # ever trying the shorter board+kind="full-" split that's actually correct.
+          pattern = re.compile(r"^agrumy-(?P<board>[a-z0-9_-]+)(?<!-full)-(?P<kind>full-)?v(?P<version>[^/]+)\.bin$")
           files = []
           for name in sorted(os.listdir(".")):
               m = pattern.match(name)

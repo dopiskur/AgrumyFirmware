@@ -52,7 +52,10 @@ import datetime, hashlib, json, os, re, subprocess, sys
 
 releases = json.loads(sys.argv[1])
 target, repo, limit, token = os.environ["TARGET"], os.environ["REPO"], int(os.environ["LIMIT"]), os.environ["TOKEN"]
-pattern = re.compile(r"^agrumy-(?P<board>[a-z0-9]+)-v(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\.bin$")
+# Board allows '-'/'_' (kc868-a6, seeed_xiao_esp32c3); the (?<!-full) lookbehind keeps a full-image
+# filename (agrumy-<board>-full-v<version>.bin) from being swallowed as board="<board>-full" - this
+# script only ever wants the OTA .bin, never the full image.
+pattern = re.compile(r"^agrumy-(?P<board>[a-z0-9_-]+)(?<!-full)-v(?P<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)\.bin$")
 
 manifest = {"schemaVersion": 1, "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "source": f"github:{repo}", "releases": []}
