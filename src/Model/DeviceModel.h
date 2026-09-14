@@ -398,6 +398,9 @@ struct DeviceConfig
     bool sleepDeep;
     // Only meaningful under AGRUMY_LORA_GATEWAY_CAPABLE; main.cpp's loop() gates LoRaGatewayRelayController::poll() on this.
     bool loRaGatewayEnabled = false;
+    // Gate main.cpp's device.powerRailPrimary()/powerRailSecondary() calls - true keeps the pre-existing always-cycled behavior, false leaves that rail untouched (permanently on, whatever it was left at).
+    bool powerRailPrimaryEnabled = true;
+    bool powerRailSecondaryEnabled = true;
 
     // Current UTC offset in seconds (positive east of UTC), refreshed on every config sync; lets scheduleRelayFunction() compute local day/time with plain integer math, no on-device IANA/DST database.
     int utcOffsetSeconds = 0;

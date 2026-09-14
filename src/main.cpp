@@ -275,9 +275,15 @@ void setup()
     }
   }
 
-  // Unconditional on purpose: for a non-battery (mains) device, loop()'s batteryEnabled cycling never touches these pins, so this is the ONLY place that powers them. A battery device's loop() takes over duty-cycling from the next iteration.
-  device.powerRailPrimary(true);
-  device.powerRailSecondary(true);
+  // Unconditional on purpose (aside from the per-rail enable flags): for a non-battery (mains) device, loop()'s batteryEnabled cycling never touches these pins, so this is the ONLY place that powers them. A battery device's loop() takes over duty-cycling from the next iteration.
+  if (deviceConfig.powerRailPrimaryEnabled)
+  {
+    device.powerRailPrimary(true);
+  }
+  if (deviceConfig.powerRailSecondaryEnabled)
+  {
+    device.powerRailSecondary(true);
+  }
 
   device.setLastPhase(PHASE_SENSOR_SETUP);
   sensor.setupSensor();    // early init for more precise measurement
@@ -332,8 +338,14 @@ void loop()
 
   if (deviceConfig.batteryEnabled)
   {
-    device.powerRailPrimary(true);
-    device.powerRailSecondary(true);
+    if (deviceConfig.powerRailPrimaryEnabled)
+    {
+      device.powerRailPrimary(true);
+    }
+    if (deviceConfig.powerRailSecondaryEnabled)
+    {
+      device.powerRailSecondary(true);
+    }
   }
 
 #ifdef AGRUMY_GPS_ENABLED
@@ -391,8 +403,14 @@ void loop()
 
   if (deviceConfig.batteryEnabled)
   {
-    device.powerRailPrimary(false);
-    device.powerRailSecondary(false);
+    if (deviceConfig.powerRailPrimaryEnabled)
+    {
+      device.powerRailPrimary(false);
+    }
+    if (deviceConfig.powerRailSecondaryEnabled)
+    {
+      device.powerRailSecondary(false);
+    }
   }
 
   Serial.printf("[Diag] end-of-cycle FreeHeap=%u MaxAllocHeap=%u loopTaskHighWaterMark=%u\n", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(NULL));

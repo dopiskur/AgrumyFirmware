@@ -142,6 +142,8 @@ void ConfigParser::parse(const String &configJson, DeviceConfig &currentConfig)
   currentConfig.sleepSeconds = clampToSleepFloor(requestedSleepSeconds, MIN_SLEEP_SECONDS);
   currentConfig.sleepDeep = config["sleepDeep"];
   currentConfig.loRaGatewayEnabled = config["loRaGatewayEnabled"] | false;
+  currentConfig.powerRailPrimaryEnabled = config["powerRailPrimaryEnabled"] | true;
+  currentConfig.powerRailSecondaryEnabled = config["powerRailSecondaryEnabled"] | true;
   // Keeps the current offset if an older server doesn't send this key - never silently jump to UTC just because the key was missing.
   currentConfig.utcOffsetSeconds = config["utcOffsetSeconds"] | currentConfig.utcOffsetSeconds;
   currentConfig.serverUtcEpoch = config["serverUtcEpoch"] | 0L;

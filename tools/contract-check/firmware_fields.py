@@ -85,6 +85,7 @@ CONTRACT = {
             "servicePoint", "servicePublicKey", "apiId", "apiKey", "schemaVersion",
             "configVersion", "tenantID", "deviceID", "deviceFarmUnitID", "deviceFarmUnitZoneID",
             "deviceTypeServiceID", "sleepSeconds", "sleepDeep", "loRaGatewayEnabled",
+            "powerRailPrimaryEnabled", "powerRailSecondaryEnabled",
             "utcOffsetSeconds", "serverUtcEpoch",
             "deviceSensorEnabled", "deviceControllerEnabled", "batteryEnabled", "enabled",
             "debug", "reset", "emergencyStop",
