@@ -11,12 +11,11 @@ in the separate [AgrumyService](https://github.com/dopiskur/AgrumyService) repos
 
 ## Supported hardware
 
-Built with PlatformIO. Eleven environments (plus `native`, host-only, see Tests below):
+Built with PlatformIO. Ten environments (plus `native`, host-only, see Tests below):
 
 | Environment | Board | Role |
 | --- | --- | --- |
 | `esp32dev` | ESP32-WROOM-32 dev board | Controller (relays + sensors) |
-| `esp32s3usbotg` | ESP32-S3 | Controller |
 | `seeed_xiao_esp32c3` | Seeed XIAO ESP32-C3 | Sensor-only node, no relay outputs |
 | `kc868-a6` | ESP32-WROOM-32 (KC868-A6 kit) | Controller - six relays behind a PCF8574 I2C expander. Also carries an onboard SX1278 socket wired up as an optional LoRa Gateway relay (`LoRaGatewayRelayController`, `deviceConfig.loRaGatewayEnabled`) - a dual-role toggle on top of its normal WiFi/relay/sensor job, not a separate profile |
 | `heltec-v3` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | Controller (relays + sensors) - the standard WiFi/HTTP build on Heltec LoRa hardware, not a LoRa transport profile itself |
@@ -153,7 +152,7 @@ git tag v1.2.3
 git push origin v1.2.3
 ```
 
-Today its build matrix only covers `esp32dev` and `esp32s3usbotg` - every
+Today its build matrix only covers `esp32dev` and `seeed_xiao_esp32c3` - every
 other environment still needs a manual `pio run -e <env>` build until it's
 added to the matrix (the merge-bin step errors out for any environment it
 doesn't have bootloader/partition offsets for yet). Built images are named by

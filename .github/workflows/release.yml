@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        environment: [esp32dev, esp32s3usbotg, seeed_xiao_esp32c3]
+        environment: [esp32dev, seeed_xiao_esp32c3]
     steps:
       # Roadmap #121: every Action in this file is SHA-pinned, not just softprops/action-gh-release
       # below (same practice as the scaleTrigger repo) - a moving major tag (@v4) could be
@@ -67,9 +67,6 @@ jobs:
               # own boot header, not ours) - see FLASH_EXTRA_IMAGES in the arduino-esp32 platform's
               # platformio-build.py, which special-cases esp32/esp32s2 this way.
               CHIP=esp32; BOOTLOADER_OFFSET=0x1000; FLASH_SIZE=4MB ;;
-            esp32s3usbotg)
-              # Every other supported chip (S3 included) boots its bootloader from 0x0.
-              CHIP=esp32s3; BOOTLOADER_OFFSET=0x0; FLASH_SIZE=8MB ;;
             seeed_xiao_esp32c3)
               # C3 (RISC-V) also boots its bootloader from 0x0, same as S3 - only classic ESP32 (Xtensa) is special-cased above. 4MB flash confirmed on real XIAO C3 hardware (esptool chip_id).
               CHIP=esp32c3; BOOTLOADER_OFFSET=0x0; FLASH_SIZE=4MB ;;
