@@ -100,7 +100,9 @@ static Adafruit_BME680 bme680;
 static Adafruit_DPS310 dps310;
 static SensirionI2cScd30 scd30;
 static SensirionI2cScd4x scd4x;
+#if !defined(CONFIG_IDF_TARGET_ESP32C3)
 static MHZ19 mhz19(&Serial2); // Stream* is a constructor argument, not a begin() parameter - same reason DS18B20's OneWire is constructed at setupSensor() time, but Serial2 is a fixed global so this can happen at static-init instead
+#endif // ESP32-C3 has only UART0 (console, USB-CDC here) and UART1 - no third hardware UART for this sensor.
 static I2CSoilMoistureSensor chirpSoilMoisture;
 static Ezo_board ezoPh(99, "PH");
 // Lazily constructed (only when actually configured), same pattern as Max31855/Max31856/Max31865 below - PhSensor's
@@ -238,6 +240,7 @@ void SensorController::setupSensor()
         scd4x.begin(Wire, SCD41_I2C_ADDR_62);
         scd4xStatus = scd4x.startPeriodicMeasurement() == 0;
     }
+#if !defined(CONFIG_IDF_TARGET_ESP32C3)
     if (deviceConfig.configSensor.sensorCo2 == SensorTypeIds::Mhz19)
     {
         // No dedicated config pins for this UART (see ConfigPin) - default ESP32 hardware UART2 pins (RX16/TX17).
@@ -245,6 +248,7 @@ void SensorController::setupSensor()
         mhz19.setAutoCalibration(false);
         mhz19Status = true;
     }
+#endif
     if (deviceConfig.configSensor.sensorMoist == SensorTypeIds::ChirpSoilMoisture)
     {
         chirpSoilMoisture.begin();
@@ -930,11 +934,15 @@ void SensorController::sensor_SCD4x_co2()
 void SensorController::sensor_MHZ19_co2()
 {
     Serial.println("[Sensor] MH-Z19 CO2");
+#if !defined(CONFIG_IDF_TARGET_ESP32C3)
     if (!mhz19Status) { reportSensorInitError("MHZ19"); return; }
     mhz19.retrieveData();
     int co2 = mhz19.getCO2();
     Serial.println(co2);
     sensorData.co2 = co2;
+#else
+    reportSensorInitError("MHZ19"); // no third hardware UART on this chip - see the static mhz19 declaration above
+#endif
 }
 
 void SensorController::sensor_Chirp_moist()

@@ -11,12 +11,13 @@ in the separate [AgrumyService](https://github.com/dopiskur/AgrumyService) repos
 
 ## Supported hardware
 
-Built with PlatformIO. Ten environments (plus `native`, host-only, see Tests below):
+Built with PlatformIO. Eleven environments (plus `native`, host-only, see Tests below):
 
 | Environment | Board | Role |
 | --- | --- | --- |
 | `esp32dev` | ESP32-WROOM-32 dev board | Controller (relays + sensors) |
 | `esp32s3usbotg` | ESP32-S3 | Controller |
+| `seeed_xiao_esp32c3` | Seeed XIAO ESP32-C3 | Sensor-only node, no relay outputs |
 | `kc868-a6` | ESP32-WROOM-32 (KC868-A6 kit) | Controller - six relays behind a PCF8574 I2C expander. Also carries an onboard SX1278 socket wired up as an optional LoRa Gateway relay (`LoRaGatewayRelayController`, `deviceConfig.loRaGatewayEnabled`) - a dual-role toggle on top of its normal WiFi/relay/sensor job, not a separate profile |
 | `heltec-v3` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V3) | Controller (relays + sensors) - the standard WiFi/HTTP build on Heltec LoRa hardware, not a LoRa transport profile itself |
 | `heltec-v4` | ESP32-S3 + SX1262 (Heltec WiFi LoRa 32 V4, no official PlatformIO board yet - reuses V3's board id) + external GPS module | Controller - same job as `heltec-v3` plus GPS-based device location (TinyGPSPlus over UART, `Controller/GpsController`), reported as `Latitude`/`Longitude` in the config-poll heartbeat |

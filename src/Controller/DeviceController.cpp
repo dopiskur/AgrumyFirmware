@@ -173,8 +173,10 @@ bool DeviceController::consumeConfigAppliedPending()
   return pending;
 }
 
+#if !defined(CONFIG_IDF_TARGET_ESP32C3)
 // exc_bt_info.bt's own array (esp_core_dump_bt_info_t) is exactly 16 deep - take all of it, a shorter cap risks truncating before the actual application call site.
 static const uint32_t MaxCrashBacktraceAddresses = 16;
+#endif
 
 String DeviceController::consumeCrashSummary()
 {
@@ -188,6 +190,13 @@ String DeviceController::consumeCrashSummary()
   String result = "";
   if (summary != nullptr && esp_core_dump_get_summary(summary) == ESP_OK)
   {
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+    // RISC-V's esp_core_dump_bt_info_t carries a raw stackdump (meant for offline GDB/ELF decoding), not the Xtensa struct's ready-made depth/bt[] address list - ex_info's fields differ too (mcause instead of exc_cause/exc_vaddr).
+    result = "task=" + String(summary->exc_task) +
+             " pc=0x" + String(summary->exc_pc, HEX) +
+             " mcause=" + String(summary->ex_info.mcause) +
+             " phase=" + loopPhaseName(rtcLastPhase);
+#else
     String backtrace = "";
     uint32_t depth = summary->exc_bt_info.depth;
     if (depth > MaxCrashBacktraceAddresses)
@@ -209,6 +218,7 @@ String DeviceController::consumeCrashSummary()
              " vaddr=0x" + String(summary->ex_info.exc_vaddr, HEX) +
              (summary->exc_bt_info.corrupted ? " bt(corrupted)=" : " bt=") + backtrace +
              " phase=" + loopPhaseName(rtcLastPhase);
+#endif
     Serial.println("[Device] Pending crash dump found: " + result);
   }
   else

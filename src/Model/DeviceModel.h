@@ -140,6 +140,38 @@ struct ConfigPin // default values, cannot be changed during the setup phase
     // Same caveat as PWM_PINS. This is an S3 target, which has NO native DAC peripheral at all (dropped from the S3 silicon) - Analog0to10V here would need an external I2C DAC (e.g. MCP4725), not yet wired on any board, so this stays unassigned regardless of schematic.
     int ANALOG_PINS[4] = {-1, -1, -1, -1};
     int SERVO_PINS[4] = {-1, -1, -1, -1};
+#elif defined(AGRUMY_KIT_XIAO_C3)
+    // Sensor-only node - RELAY_PINS all -1 below, so ControllerController's `pin < 0` guard keeps the relay path inert even if server config enables it. XIAO C3 breaks out 11 pads: GPIO2-10, 20, 21. GPIO6/7 stay free for the default I2C bus (BH1750/CCS811/BMPx8x). GPIO2/8/9 are boot-strapping pins, left unconnected. GPIO20/21 are UART0, reusable as GPIO since the console runs over USB-CDC (board sets ARDUINO_USB_CDC_ON_BOOT=1). Analog inputs stay on ADC1 (GPIO0-4) to keep reading while WiFi is on.
+    int POWER_RAIL_PRIMARY=10;
+    int POWER_RAIL_SECONDARY=20;
+
+    int STATUS_POWER=-1; //UNDEFINED
+    int STATUS_SENSOR=-1; //UNDEFINED
+    int STATUS_ERROR=-1; //UNDEFINED
+
+    int DHT=5;
+    int TEMPSOIL=-1; //UNDEFINED - sensor_DS18B20_temp() is an empty stub
+    int MOIST=3; // ADC1_CH3
+    int WaterTank=4; // ADC1_CH4
+    int DEPTH_RX=-1; //UNDEFINED
+    int DEPTH_TX=-1; //UNDEFINED
+    int PH=-1; //UNDEFINED
+    int BATTERY_ADC=-1; //UNDEFINED
+
+    int MAX31855_CS=-1; //UNDEFINED
+    int MAX31856_CS=-1; //UNDEFINED
+    int MAX31865_CS=-1; //UNDEFINED
+    int HX711_DOUT=-1; //UNDEFINED
+    int HX711_SCK=-1; //UNDEFINED
+
+    int GPS_RX=-1; //UNDEFINED
+    int GPS_TX=-1; //UNDEFINED
+
+    int RELAY_PINS[8] = {-1, -1, -1, -1, -1, -1, -1, -1}; // sensor-only node, no relay outputs
+
+    int PWM_PINS[4] = {-1, -1, -1, -1};
+    int ANALOG_PINS[4] = {-1, -1, -1, -1};
+    int SERVO_PINS[4] = {-1, -1, -1, -1};
 #else
     int POWER_RAIL_PRIMARY=2;
     int POWER_RAIL_SECONDARY=15;
